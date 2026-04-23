@@ -1,6 +1,24 @@
 version: '3.8'
 
 services:
+  app:
+    build: .
+    container_name: ssb-app
+    restart: unless-stopped
+    environment:
+      DB_TYPE: ${DB_TYPE:-sqlite}
+      SQLITE_PATH: /app/cve_database.db
+      # MariaDB settings (when DB_TYPE=mysql)
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER:-cvedb}
+      DB_PASSWORD: ${DB_PASSWORD:-cvedb}
+      DB_NAME: ${DB_NAME:-cve_database}
+    ports:
+      - "${APP_PORT:-5005}:5000"
+    networks:
+      - ssb-net
+
   db:
     image: mariadb:11
     container_name: ssb-mariadb
@@ -11,7 +29,7 @@ services:
       MARIADB_USER: ${DB_USER:-cvedb}
       MARIADB_PASSWORD: ${DB_PASSWORD:-cvedb}
     ports:
-      - "${DB_PORT:-3306}:3306"
+      - "3306:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
       - ./scripts/create_mysql_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
@@ -23,24 +41,8 @@ services:
       start_period: 30s
     networks:
       - ssb-net
-
-  app:
-    build: .
-    container_name: ssb-app
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      DB_HOST: db
-      DB_PORT: 3306
-      DB_USER: ${DB_USER:-cvedb}
-      DB_PASSWORD: ${DB_PASSWORD:-cvedb}
-      DB_NAME: ${DB_NAME:-cve_database}
-    ports:
-      - "${APP_PORT:-5000}:5000"
-    networks:
-      - ssb-net
+    profiles:
+      - mysql
 
 volumes:
   mariadb_data:

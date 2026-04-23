@@ -1,6 +1,5 @@
 """Secure Software Board — Flask Application Factory."""
 
-import pymysql
 from flask import Flask, render_template
 
 from config import Config
@@ -35,8 +34,14 @@ def create_app(config_class=Config):
 
     @app.errorhandler(Exception)
     def handle_db_error(error):
-        if isinstance(error, (ConnectionError, pymysql.err.OperationalError)):
+        if isinstance(error, (ConnectionError, FileNotFoundError)):
             return render_template('db_error.html', error=str(error)), 503
+        try:
+            import pymysql
+            if isinstance(error, pymysql.err.OperationalError):
+                return render_template('db_error.html', error=str(error)), 503
+        except ImportError:
+            pass
         raise error
 
     return app
