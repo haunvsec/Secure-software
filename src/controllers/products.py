@@ -35,9 +35,11 @@ def product_detail(vendor, product):
     safe_versions = compute_safe_versions(version_ranges)
     advisories = get_product_advisories(db, vendor, product)
     safe_versions = merge_advisory_into_safe_versions(safe_versions, advisories)
+    # Always fetch references from the CVE with highest version_end per branch
     for sv in safe_versions:
-        if not sv.get('from_advisory'):
-            sv['references'] = get_safe_version_references(db, sv.get('max_cve_id', ''))
+        max_cve = sv.get('max_cve_id', '')
+        if max_cve:
+            sv['references'] = get_safe_version_references(db, max_cve)
     versions = get_product_versions(db, vendor, product, page=sanitize_page(request.args.get('vpage')))
     return render_template('product_detail.html', active_page='products',
                            product_info=pd, cves=result['items'],

@@ -44,7 +44,7 @@ def get_vendors(db, letter: str | None = None, search: str | None = None, page: 
         f"SELECT COUNT(*) FROM ("
         f"  SELECT ap.vendor FROM affected_products ap "
         f"  WHERE {where} GROUP BY ap.vendor"
-        f")"
+        f") AS t"
     )
     return get_paginated_result(db, query, count_query, tuple(params), page)
 
@@ -91,7 +91,7 @@ def get_vendor_products(db, vendor: str, page: int) -> dict:
         "  SELECT product FROM affected_products WHERE vendor = %s "
         "  AND product != '' AND product != 'n/a' AND product IS NOT NULL "
         "  GROUP BY product"
-        ")"
+        ") AS t"
     )
     return get_paginated_result(db, query, count_query, (vendor,), page)
 
@@ -119,7 +119,7 @@ def get_products(db, search: str | None = None, page: int = 1) -> dict:
         f"SELECT COUNT(*) FROM ("
         f"  SELECT ap.product FROM affected_products ap "
         f"  WHERE {where} GROUP BY ap.vendor, ap.product"
-        f")"
+        f") AS t"
     )
     return get_paginated_result(db, query, count_query, tuple(params), page)
 

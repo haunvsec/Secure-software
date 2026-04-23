@@ -110,14 +110,11 @@
               {% endif %}
             </td>
             <td class="small">
-              {% if sv.from_advisory is defined and sv.from_advisory and sv.advisory_url %}
-                <a href="{{ sv.advisory_url }}" target="_blank" rel="noopener noreferrer" class="d-block text-decoration-none text-break mb-1">
-                  <i class="bi bi-megaphone"></i> {{ sv.advisory_id or sv.advisory_url[:50] }}
-                </a>
-              {% elif sv.references is defined and sv.references %}
+              {% if sv.references is defined and sv.references %}
                 {% for ref in sv.references %}
                 <a href="{{ ref.url if ref is mapping else ref }}" target="_blank" rel="noopener noreferrer" class="d-block text-decoration-none text-break mb-1">
                   <i class="bi bi-link-45deg"></i> {{ (ref.url if ref is mapping else ref)[:70] }}{% if (ref.url if ref is mapping else ref)|length > 70 %}…{% endif %}
+                  {% if ref is mapping and ref.tags %}{% for tag in ref.tags.split(',')[:2] %}<span class="badge bg-light text-dark border ms-1" style="font-size:0.6rem">{{ tag.strip() }}</span>{% endfor %}{% endif %}
                 </a>
                 {% endfor %}
               {% else %}

@@ -65,7 +65,7 @@ def search_cves(db, cve_id: str | None = None, keyword: str | None = None,
         f"SELECT COUNT(*) FROM ("
         f"  SELECT c.cve_id FROM cves c {join_ap} "
         f"  WHERE {where} GROUP BY c.cve_id"
-        f")"
+        f") AS t"
     )
     return get_paginated_result(db, query, count_query, tuple(params), page)
 

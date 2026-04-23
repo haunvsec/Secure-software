@@ -93,7 +93,7 @@ def get_cwe_types(db, page: int) -> dict:
         "  SELECT cwe_id FROM cwe_entries "
         "  WHERE cwe_id IS NOT NULL AND cwe_id != '' "
         "  GROUP BY cwe_id"
-        ")"
+        ") AS t"
     )
     result = get_paginated_result(db, query, count_query, (), page)
     cache.set(cache_key, result, 3600)
@@ -190,7 +190,7 @@ def get_assigners(db, page: int) -> dict:
         "  WHERE state = 'PUBLISHED' AND assigner_short_name IS NOT NULL "
         "  AND assigner_short_name != '' "
         "  GROUP BY assigner_short_name"
-        ")"
+        ") AS t"
     )
     return get_paginated_result(db, query, count_query, (), page)
 
