@@ -8,7 +8,9 @@ now use vendor/product directly in affected_products — no fuzzy matching neede
 import json
 import glob
 import os
+import re
 import sys
+from datetime import datetime
 import pymysql
 
 DB_HOST = os.environ.get('DB_HOST', 'localhost')
@@ -20,6 +22,62 @@ ADVISORY_DIR = os.environ.get(
     'ADVISORY_DIR',
     os.path.join(os.path.dirname(os.path.dirname(__file__)), 'security-advisory-db'),
 )
+
+
+# Date formats found in advisory data
+_DATE_FORMATS = [
+    '%Y-%m-%dT%H:%M:%S.%fZ',       # 2025-06-09T19:06:08.123Z
+    '%Y-%m-%dT%H:%M:%SZ',           # 2025-06-09T19:06:08Z
+    '%Y-%m-%dT%H:%M:%S%z',          # 2025-06-09T19:06:08+00:00
+    '%Y-%m-%dT%H:%M:%S',            # 2025-06-09T19:06:08
+    '%Y-%m-%d',                      # 2025-06-09
+    '%Y/%m/%d %H:%M %p',            # 2026/01/09 13:15 PM
+    '%Y/%m/%d %I:%M %p',            # 2026/01/09 1:15 PM
+    '%Y/%m/%d',                      # 2026/01/09
+    '%d %B %Y',                      # 01 January 2018
+    '%d %b %Y',                      # 01 Jan 2018
+    '%m/%d/%Y %H:%M %p',            # 03/02/2026 13:15 PM
+    '%m/%d/%Y %I:%M %p',            # 03/02/2026 1:15 PM
+    '%m/%d/%Y',                      # 03/02/2026
+]
+
+# Regex to strip timezone abbreviations (PST, PDT, EST, etc.)
+_TZ_ABBR_RE = re.compile(r'\s+[A-Z]{2,5}$')
+
+
+def normalize_date(date_str: str) -> str:
+    """Normalize date string to ISO format YYYY-MM-DDTHH:MM:SSZ."""
+    if not date_str or not date_str.strip():
+        return ''
+    s = date_str.strip()
+
+    # Already ISO format with Z
+    if re.match(r'^\d{4}-\d{2}-\d{2}T', s):
+        # Strip fractional seconds and timezone offset, keep YYYY-MM-DDTHH:MM:SSZ
+        m = re.match(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', s)
+        if m:
+            return m.group(1) + 'Z'
+        return s
+
+    # Strip timezone abbreviation (PST, PDT, etc.)
+    s_clean = _TZ_ABBR_RE.sub('', s)
+
+    for fmt in _DATE_FORMATS:
+        try:
+            dt = datetime.strptime(s_clean, fmt)
+            return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+        except ValueError:
+            continue
+
+    # Last resort: try dateutil if available
+    try:
+        from dateutil import parser as dateutil_parser
+        dt = dateutil_parser.parse(s)
+        return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+    except Exception:
+        pass
+
+    return date_str  # Return original if can't parse
 
 
 def parse_advisory(filepath):
@@ -42,8 +100,8 @@ def parse_advisory(filepath):
         'severity': data.get('severity', ''),
         'cvss_score': data.get('cvss_score'),
         'cvss_vector': data.get('cvss_vector', ''),
-        'published_date': data.get('published_date', ''),
-        'modified_date': data.get('modified_date', ''),
+        'published_date': normalize_date(data.get('published_date', '')),
+        'modified_date': normalize_date(data.get('modified_date', '')),
         'url': data.get('url', ''),
         'vendor': data.get('vendor', ''),
         'solution': data.get('solution', ''),
