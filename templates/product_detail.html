@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}{{ product_info.product }} ({{ product_info.vendor }}) | CVE Database{% endblock %}
+{% block title %}{{ product_info.product }} ({{ product_info.vendor }}) | Secure Software Board{% endblock %}
 
 {% block content %}
 <nav aria-label="breadcrumb" class="mb-3">
@@ -39,42 +39,109 @@
   {% endfor %}
 </div>
 
-<!-- Safe Version Suggestion placeholder (task 11) -->
-{% if safe_versions is defined and safe_versions %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-body">
-    <h2 class="h6 fw-semibold mb-3"><i class="bi bi-shield-check me-1"></i>Phiên bản an toàn được gợi ý</h2>
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-0" id="productTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="safe-tab" data-bs-toggle="tab" data-bs-target="#tab-safe"
+            type="button" role="tab" aria-controls="tab-safe" aria-selected="true">
+      <i class="bi bi-shield-check me-1"></i>Phiên bản an toàn được gợi ý
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="versions-tab" data-bs-toggle="tab" data-bs-target="#tab-versions"
+            type="button" role="tab" aria-controls="tab-versions" aria-selected="false">
+      <i class="bi bi-tags me-1"></i>Danh sách phiên bản
+      {% if versions is defined and versions %}<span class="badge bg-secondary ms-1">{{ versions|length }}</span>{% endif %}
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="vulns-tab" data-bs-toggle="tab" data-bs-target="#tab-vulns"
+            type="button" role="tab" aria-controls="tab-vulns" aria-selected="false">
+      <i class="bi bi-bug me-1"></i>Vulnerabilities
+      <span class="badge bg-secondary ms-1">{{ '{:,}'.format(pagination.total) }}</span>
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content border border-top-0 rounded-bottom bg-white">
+
+  <!-- Tab 1: Safe Version Suggestions (default) -->
+  <div class="tab-pane fade show active p-4" id="tab-safe" role="tabpanel" aria-labelledby="safe-tab">
+    {% if safe_versions is defined and safe_versions %}
     <div class="table-responsive">
       <table class="table table-sm mb-0">
         <thead class="table-light">
-          <tr><th>Branch</th><th>Safe Version</th><th>CVEs Covered</th></tr>
+          <tr>
+            <th>Branch</th>
+            <th>Safe Version</th>
+            <th>Lỗ hổng đã fix</th>
+            <th>References</th>
+          </tr>
         </thead>
         <tbody>
           {% for sv in safe_versions %}
           <tr>
-            <td>{{ sv.branch }}</td>
+            <td class="fw-semibold">{{ sv.branch }}</td>
             <td><code>{{ sv.operator }} {{ sv.safe_version }}</code></td>
-            <td>{{ sv.cve_count }}</td>
+            <td>
+              <a href="/products/{{ product_info.vendor }}/{{ product_info.product }}/fixed/{{ sv.branch }}"
+                 class="text-decoration-none fw-semibold">{{ '{:,}'.format(sv.cve_count) }}</a>
+            </td>
+            <td class="small">
+              {% if sv.references is defined and sv.references %}
+                {% for ref in sv.references %}
+                <a href="{{ ref.url }}" target="_blank" rel="noopener noreferrer" class="d-block text-decoration-none text-break mb-1">
+                  <i class="bi bi-link-45deg"></i> {{ ref.url[:70] }}{% if ref.url|length > 70 %}…{% endif %}
+                  {% if ref.tags %}{% for tag in ref.tags.split(',')[:2] %}<span class="badge bg-light text-dark border ms-1" style="font-size:0.6rem">{{ tag.strip() }}</span>{% endfor %}{% endif %}
+                </a>
+                {% endfor %}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-  </div>
-</div>
-{% elif safe_versions is defined and not safe_versions %}
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-body">
-    <h2 class="h6 fw-semibold mb-3"><i class="bi bi-shield-check me-1"></i>Phiên bản an toàn được gợi ý</h2>
+    {% else %}
     <p class="text-muted mb-0">Không đủ dữ liệu phiên bản để gợi ý.</p>
+    {% endif %}
   </div>
-</div>
-{% endif %}
 
-<!-- CVE Table -->
-<h2 class="h5 mb-3">Vulnerabilities ({{ '{:,}'.format(pagination.total) }})</h2>
-<div class="card border-0 shadow-sm">
-  <div class="card-body p-0">
+  <!-- Tab 2: Version List -->
+  <div class="tab-pane fade p-4" id="tab-versions" role="tabpanel" aria-labelledby="versions-tab">
+    {% if versions is defined and versions %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Version</th><th>CVE Count</th></tr>
+        </thead>
+        <tbody>
+          {% for v in versions[:20] %}
+          <tr>
+            <td>
+              <a href="/products/{{ product_info.vendor }}/{{ product_info.product }}/versions/{{ v.version }}"
+                 class="text-decoration-none fw-semibold">{{ v.version }}</a>
+            </td>
+            <td><span class="badge bg-primary">{{ '{:,}'.format(v.cve_count) }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if versions|length > 20 %}
+    <div class="mt-2">
+      <small class="text-muted">Hiển thị 20 / {{ versions|length }} phiên bản.</small>
+    </div>
+    {% endif %}
+    {% else %}
+    <p class="text-muted mb-0">Không có dữ liệu phiên bản.</p>
+    {% endif %}
+  </div>
+
+  <!-- Tab 3: Vulnerabilities -->
+  <div class="tab-pane fade p-4" id="tab-vulns" role="tabpanel" aria-labelledby="vulns-tab">
     <div class="table-responsive">
       <table class="table table-hover mb-0">
         <thead class="table-light">
@@ -95,8 +162,9 @@
         </tbody>
       </table>
     </div>
+    {% set base_url = '/products/' ~ product_info.vendor ~ '/' ~ product_info.product %}
+    {% include 'components/pagination.html' %}
   </div>
+
 </div>
-{% set base_url = '/products/' ~ product_info.vendor ~ '/' ~ product_info.product %}
-{% include 'components/pagination.html' %}
 {% endblock %}

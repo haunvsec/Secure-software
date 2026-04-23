@@ -754,3 +754,195 @@ def get_product_version_ranges(db, vendor: str, product: str) -> list[dict]:
         (vendor, product),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Product version model functions
+# ---------------------------------------------------------------------------
+
+def get_product_versions(db, vendor: str, product: str) -> list[dict]:
+    """Return list of versions for a product with CVE counts, sorted by version desc (semver).
+
+    Determines version from version_exact (if set) or version_start.
+    Excludes empty/null versions.
+    """
+    from safe_version import parse_version
+
+    rows = db.execute(
+        "SELECT "
+        "  CASE WHEN version_exact != '' AND version_exact IS NOT NULL "
+        "       THEN version_exact "
+        "       WHEN version_start != '' AND version_start IS NOT NULL "
+        "       THEN version_start "
+        "       ELSE NULL END AS version, "
+        "  COUNT(DISTINCT cve_id) AS cve_count "
+        "FROM affected_products "
+        "WHERE vendor = ? AND product = ? "
+        "GROUP BY version "
+        "HAVING version IS NOT NULL AND version != '' ",
+        (vendor, product),
+    ).fetchall()
+    items = [dict(r) for r in rows]
+
+    # Sort by parsed version descending; unparseable versions go to the end
+    def _sort_key(item):
+        parsed = parse_version(item['version'])
+        if parsed is None:
+            return (0,)  # unparseable → bottom
+        return (1,) + parsed  # parseable → sort by tuple desc
+
+    items.sort(key=_sort_key, reverse=True)
+    return items
+
+
+def get_version_detail(db, vendor: str, product: str, version: str) -> dict | None:
+    """Return version info with total CVEs and severity distribution. None if not found."""
+    # Check version exists
+    row = db.execute(
+        "SELECT COUNT(DISTINCT ap.cve_id) AS total_cves "
+        "FROM affected_products ap "
+        "WHERE ap.vendor = ? AND ap.product = ? "
+        "AND (ap.version_exact = ? OR (ap.version_start = ? AND (ap.version_exact = '' OR ap.version_exact IS NULL)))",
+        (vendor, product, version, version),
+    ).fetchone()
+    if row is None or row['total_cves'] == 0:
+        return None
+
+    sev_rows = db.execute(
+        "SELECT c.severity, COUNT(DISTINCT c.cve_id) AS count "
+        "FROM cves c "
+        "INNER JOIN affected_products ap ON c.cve_id = ap.cve_id "
+        "WHERE ap.vendor = ? AND ap.product = ? "
+        "AND (ap.version_exact = ? OR (ap.version_start = ? AND (ap.version_exact = '' OR ap.version_exact IS NULL))) "
+        "AND c.state = 'PUBLISHED' "
+        "GROUP BY c.severity",
+        (vendor, product, version, version),
+    ).fetchall()
+    severity = {r['severity']: r['count'] for r in sev_rows if r['severity']}
+
+    return {
+        'vendor': vendor,
+        'product': product,
+        'version': version,
+        'total_cves': row['total_cves'],
+        'critical': severity.get('CRITICAL', 0),
+        'high': severity.get('HIGH', 0),
+        'medium': severity.get('MEDIUM', 0),
+        'low': severity.get('LOW', 0),
+    }
+
+
+def get_version_cves(db, vendor: str, product: str, version: str, page: int) -> dict:
+    """Return paginated CVEs affecting a specific version of a product."""
+    version_cond = (
+        "(ap.version_exact = ? OR (ap.version_start = ? "
+        "AND (ap.version_exact = '' OR ap.version_exact IS NULL)))"
+    )
+    query = (
+        "SELECT c.cve_id, c.description, c.severity, c.date_published, "
+        "       cs.base_score "
+        "FROM cves c "
+        "INNER JOIN affected_products ap ON c.cve_id = ap.cve_id "
+        "LEFT JOIN cvss_scores cs ON c.cve_id = cs.cve_id "
+        f"WHERE ap.vendor = ? AND ap.product = ? AND {version_cond} "
+        "AND c.state = 'PUBLISHED' "
+        "GROUP BY c.cve_id "
+        "ORDER BY c.date_published DESC"
+    )
+    count_query = (
+        "SELECT COUNT(DISTINCT c.cve_id) FROM cves c "
+        "INNER JOIN affected_products ap ON c.cve_id = ap.cve_id "
+        f"WHERE ap.vendor = ? AND ap.product = ? AND {version_cond} "
+        "AND c.state = 'PUBLISHED'"
+    )
+    return get_paginated_result(db, query, count_query,
+                                (vendor, product, version, version), page)
+
+
+# ---------------------------------------------------------------------------
+# Safe version references
+# ---------------------------------------------------------------------------
+
+_PRIORITY_TAGS = {'patch', 'vendor-advisory', 'release-notes', 'fix'}
+
+
+def get_safe_version_references(db, cve_ids: list[str] | str, max_refs: int = 5) -> list[dict]:
+    """Return references from CVEs related to a safe version branch.
+
+    If cve_ids is a single string, fetches references from that CVE only
+    (the CVE with the highest version_end that defines the safe version).
+    Prioritizes URLs with tags containing 'patch', 'vendor-advisory',
+    'release-notes', or 'fix'. Returns at most max_refs results.
+    """
+    if not cve_ids:
+        return []
+
+    if isinstance(cve_ids, str):
+        cve_ids = [cve_ids]
+
+    placeholders = ','.join('?' for _ in cve_ids)
+    rows = db.execute(
+        f"SELECT url, tags FROM references_table "
+        f"WHERE cve_id IN ({placeholders}) AND url != '' AND url IS NOT NULL "
+        f"ORDER BY url",
+        tuple(cve_ids),
+    ).fetchall()
+
+    # Separate priority and non-priority refs
+    priority = []
+    others = []
+    for r in rows:
+        ref = dict(r)
+        tags_lower = (ref.get('tags') or '').lower()
+        if any(t in tags_lower for t in _PRIORITY_TAGS):
+            priority.append(ref)
+        else:
+            others.append(ref)
+
+    # Deduplicate by URL
+    seen = set()
+    result = []
+    for ref in priority + others:
+        if ref['url'] not in seen:
+            seen.add(ref['url'])
+            result.append(ref)
+        if len(result) >= max_refs:
+            break
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Fixed CVEs by branch
+# ---------------------------------------------------------------------------
+
+def get_fixed_cves_by_branch(db, vendor: str, product: str, branch: str, page: int) -> dict:
+    """Return paginated CVEs fixed in a specific version branch of a product.
+
+    A CVE is considered 'fixed' in a branch if its version_end falls within
+    that branch (i.e. version_end starts with 'branch.').
+    """
+    like_pattern = f"{branch}.%"
+    query = (
+        "SELECT c.cve_id, c.description, c.severity, c.date_published, "
+        "       cs.base_score "
+        "FROM cves c "
+        "INNER JOIN affected_products ap ON c.cve_id = ap.cve_id "
+        "LEFT JOIN cvss_scores cs ON c.cve_id = cs.cve_id "
+        "WHERE ap.vendor = ? AND ap.product = ? "
+        "AND ap.version_end LIKE ? "
+        "AND ap.version_end != '' "
+        "AND c.state = 'PUBLISHED' "
+        "GROUP BY c.cve_id "
+        "ORDER BY c.date_published DESC"
+    )
+    count_query = (
+        "SELECT COUNT(DISTINCT c.cve_id) FROM cves c "
+        "INNER JOIN affected_products ap ON c.cve_id = ap.cve_id "
+        "WHERE ap.vendor = ? AND ap.product = ? "
+        "AND ap.version_end LIKE ? "
+        "AND ap.version_end != '' "
+        "AND c.state = 'PUBLISHED'"
+    )
+    return get_paginated_result(db, query, count_query,
+                                (vendor, product, like_pattern), page)

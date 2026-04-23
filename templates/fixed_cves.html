@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block title %}Fixed CVEs — {{ product }} branch {{ branch }} | Secure Software Board{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small">
+    <li class="breadcrumb-item"><a href="/products" class="text-decoration-none">Products</a></li>
+    <li class="breadcrumb-item"><a href="/vendors/{{ vendor }}" class="text-decoration-none">{{ vendor }}</a></li>
+    <li class="breadcrumb-item"><a href="/products/{{ vendor }}/{{ product }}" class="text-decoration-none">{{ product }}</a></li>
+    <li class="breadcrumb-item active">Branch {{ branch }} — Fixed CVEs</li>
+  </ol>
+</nav>
+
+<h1 class="h3 mb-1"><i class="bi bi-shield-check me-2"></i>Lỗ hổng đã fix — Branch {{ branch }}</h1>
+<p class="text-muted mb-4">{{ product }} by {{ vendor }}</p>
+
+<div class="text-muted small mb-3">{{ '{:,}'.format(pagination.total) }} lỗ hổng đã được fix trong branch {{ branch }}</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>CVE ID</th><th>Description</th><th>Severity</th><th>CVSS</th><th>Date</th></tr>
+        </thead>
+        <tbody>
+          {% for cve in cves %}
+          <tr>
+            <td class="text-nowrap"><a href="/cves/{{ cve.cve_id }}" class="text-decoration-none fw-semibold">{{ cve.cve_id }}</a></td>
+            <td class="small">{{ cve.description[:150] }}{% if cve.description and cve.description|length > 150 %}…{% endif %}</td>
+            <td>{% set score = cve.base_score %}{% set severity = cve.severity %}{% include 'components/cvss_badge.html' %}</td>
+            <td class="text-nowrap small">{{ '%.1f' | format(cve.base_score) if cve.base_score is not none else 'N/A' }}</td>
+            <td class="text-nowrap small text-muted">{{ cve.date_published[:10] if cve.date_published else 'N/A' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-4">No CVEs found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% set base_url = '/products/' ~ vendor ~ '/' ~ product ~ '/fixed/' ~ branch %}
+{% include 'components/pagination.html' %}
+{% endblock %}

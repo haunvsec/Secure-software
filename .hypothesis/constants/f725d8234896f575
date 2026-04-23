@@ -1,0 +1,4 @@
+# file: /Volumes/DATA/secure_software/models.py
+# hypothesis_version: 6.151.6
+
+[100, 200, 1999, 2099, 3600, ' AND ', '%', '*', ',', '?', 'April', 'August', 'CRITICAL', 'December', 'February', 'HIGH', 'January', 'July', 'June', 'LOW', 'MEDIUM', 'March', 'May', 'November', 'October', 'September', '\\%', '\\_', '^CVE-\\d{4}-\\d+$', '_', 'c.severity = ?', 'count', 'critical', 'cve_id', 'fix', 'high', 'items', 'low', 'medium', 'month', 'month_name', 'page', 'pages', 'patch', 'per_page', 'percentage', 'product', 'products', 'release-notes', 'severity', 'severity_summary', 'stats', 'tags', 'total', 'total_cves', 'url', 'vendor', 'vendor-advisory', 'vendors', 'version', 'years_counts']

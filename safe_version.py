@@ -106,6 +106,7 @@ def compute_safe_versions(version_ranges: list[dict]) -> list[dict]:
             branches[branch] = {
                 'max_version': ve,
                 'max_parsed': parsed,
+                'max_cve_id': cve_id,
                 'version_end_type': vet,
                 'cve_ids': {cve_id},
             }
@@ -119,11 +120,14 @@ def compute_safe_versions(version_ranges: list[dict]) -> list[dict]:
             if padded_new > padded_old:
                 entry['max_version'] = ve
                 entry['max_parsed'] = parsed
+                entry['max_cve_id'] = cve_id
                 entry['version_end_type'] = vet
 
-    # Build result
+    # Build result, sorted by branch descending (highest version first)
     result = []
-    for branch, entry in sorted(branches.items()):
+    for branch, entry in sorted(branches.items(),
+                                 key=lambda x: x[1]['max_parsed'],
+                                 reverse=True):
         vet = entry['version_end_type']
         operator = '>=' if vet == 'lessThan' else '>'
         result.append({
@@ -131,6 +135,8 @@ def compute_safe_versions(version_ranges: list[dict]) -> list[dict]:
             'safe_version': entry['max_version'],
             'operator': operator,
             'cve_count': len(entry['cve_ids']),
+            'cve_ids': list(entry['cve_ids']),
+            'max_cve_id': entry['max_cve_id'],
         })
 
     return result

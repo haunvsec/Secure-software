@@ -4,9 +4,37 @@
 <nav id="sidebar" class="sidebar d-flex flex-column flex-shrink-0 p-3 text-white bg-dark-blue">
   <a href="/" class="d-flex align-items-center mb-3 text-white text-decoration-none">
     <i class="bi bi-shield-lock-fill me-2 fs-4"></i>
-    <span class="fs-5 fw-semibold">CVE Database</span>
+    <span class="fs-5 fw-semibold">Secure Software Board</span>
   </a>
   <hr>
+
+  <!-- Search -->
+  <div class="sidebar-group mb-2">
+    <ul class="nav nav-pills flex-column">
+      <li class="nav-item">
+        <a href="/search" class="nav-link sidebar-link{% if active_page == 'search' %} active{% endif %}">
+          <i class="bi bi-search me-2"></i>Search
+        </a>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Software Secure Version Group -->
+  <div class="sidebar-group mb-2">
+    <small class="text-uppercase fw-bold text-light-blue d-block mb-1 px-2">Software Secure Version</small>
+    <ul class="nav nav-pills flex-column">
+      <li class="nav-item">
+        <a href="/products" class="nav-link sidebar-link{% if active_page == 'products' %} active{% endif %}">
+          <i class="bi bi-box-seam me-2"></i>Products
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="/vendors" class="nav-link sidebar-link{% if active_page == 'vendors' %} active{% endif %}">
+          <i class="bi bi-shop me-2"></i>Vendors
+        </a>
+      </li>
+    </ul>
+  </div>
 
   <!-- Vulnerabilities Group -->
   <div class="sidebar-group mb-2">
@@ -35,34 +63,6 @@
       <li class="nav-item">
         <a href="/assigners" class="nav-link sidebar-link{% if active_page == 'assigners' %} active{% endif %}">
           <i class="bi bi-building me-2"></i>Assigners
-        </a>
-      </li>
-    </ul>
-  </div>
-
-  <!-- Vulnerable Software Group -->
-  <div class="sidebar-group mb-2">
-    <small class="text-uppercase fw-bold text-light-blue d-block mb-1 px-2">Vulnerable Software</small>
-    <ul class="nav nav-pills flex-column">
-      <li class="nav-item">
-        <a href="/vendors" class="nav-link sidebar-link{% if active_page == 'vendors' %} active{% endif %}">
-          <i class="bi bi-shop me-2"></i>Vendors
-        </a>
-      </li>
-      <li class="nav-item">
-        <a href="/products" class="nav-link sidebar-link{% if active_page == 'products' %} active{% endif %}">
-          <i class="bi bi-box-seam me-2"></i>Products
-        </a>
-      </li>
-    </ul>
-  </div>
-
-  <!-- Search -->
-  <div class="sidebar-group">
-    <ul class="nav nav-pills flex-column">
-      <li class="nav-item">
-        <a href="/search" class="nav-link sidebar-link{% if active_page == 'search' %} active{% endif %}">
-          <i class="bi bi-search me-2"></i>Search
         </a>
       </li>
     </ul>

@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}{{ cve.cve_id }} | CVE Database{% endblock %}
+{% block title %}{{ cve.cve_id }} | Secure Software Board{% endblock %}
 
 {% block content %}
 <nav aria-label="breadcrumb" class="mb-3">
@@ -94,6 +94,43 @@
         <code class="small d-block mb-2">{{ cs.vector_string }}</code>
       {% endif %}
       <div class="table-responsive">
+        {% if cs.version and cs.version.startswith('4') %}
+        {# CVSS v4.0 layout — parse metrics from vector string #}
+        {% set v4 = {} %}
+        {% if cs.vector_string %}
+          {% for part in cs.vector_string.split('/')[1:] %}
+            {% set kv = part.split(':') %}
+            {% if kv|length == 2 %}
+              {% set _ = v4.update({kv[0]: kv[1]}) %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+        <table class="table table-sm table-bordered mb-0 small">
+          <thead class="table-light">
+            <tr>
+              <th>Attack Vector</th>
+              <th>Complexity</th>
+              <th>Attack Req.</th>
+              <th>Privileges</th>
+              <th>User Interaction</th>
+              <th>Vuln. C/I/A</th>
+              <th>Subseq. C/I/A</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ cs.attack_vector or v4.get('AV', '—') }}</td>
+              <td>{{ cs.attack_complexity or v4.get('AC', '—') }}</td>
+              <td>{{ v4.get('AT', '—') }}</td>
+              <td>{{ cs.privileges_required or v4.get('PR', '—') }}</td>
+              <td>{{ cs.user_interaction or v4.get('UI', '—') }}</td>
+              <td>{{ v4.get('VC', '—') }} / {{ v4.get('VI', '—') }} / {{ v4.get('VA', '—') }}</td>
+              <td>{{ v4.get('SC', '—') }} / {{ v4.get('SI', '—') }} / {{ v4.get('SA', '—') }}</td>
+            </tr>
+          </tbody>
+        </table>
+        {% else %}
+        {# CVSS v2/v3 layout #}
         <table class="table table-sm table-bordered mb-0 small">
           <thead class="table-light">
             <tr>
@@ -120,6 +157,7 @@
             </tr>
           </tbody>
         </table>
+        {% endif %}
       </div>
     </div>
     {% endfor %}
