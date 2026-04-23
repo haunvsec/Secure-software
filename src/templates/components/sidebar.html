@@ -19,7 +19,7 @@
     </ul>
   </div>
 
-  <!-- Software Secure Version Group -->
+  <!-- Software Secure Version -->
   <div class="sidebar-group mb-2">
     <small class="text-uppercase fw-bold text-light-blue d-block mb-1 px-2">Software Secure Version</small>
     <ul class="nav nav-pills flex-column">
@@ -36,7 +36,19 @@
     </ul>
   </div>
 
-  <!-- Vulnerabilities Group -->
+  <!-- Advisories -->
+  <div class="sidebar-group mb-2">
+    <small class="text-uppercase fw-bold text-light-blue d-block mb-1 px-2">Advisories</small>
+    <ul class="nav nav-pills flex-column">
+      <li class="nav-item">
+        <a href="/advisories" class="nav-link sidebar-link{% if active_page == 'advisories' %} active{% endif %}">
+          <i class="bi bi-megaphone me-2"></i>Security Advisories
+        </a>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Vulnerabilities -->
   <div class="sidebar-group mb-2">
     <small class="text-uppercase fw-bold text-light-blue d-block mb-1 px-2">Vulnerabilities</small>
     <ul class="nav nav-pills flex-column">

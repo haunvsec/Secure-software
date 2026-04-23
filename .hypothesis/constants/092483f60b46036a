@@ -1,4 +1,0 @@
-# file: /Volumes/DATA/secure_software/safe_version.py
-# hypothesis_version: 6.151.6
-
-['*', '.', '>', '>=', 'branch', 'cve_count', 'cve_id', 'cve_ids', 'lessThan', 'max_parsed', 'max_version', 'operator', 'safe_version', 'version_end', 'version_end_type']

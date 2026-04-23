@@ -145,14 +145,17 @@ class TestSanitizeSearch:
 
 @pytest.fixture
 def mem_db():
-    """Create an in-memory SQLite database with sample data."""
+    """Create an in-memory SQLite database with sample data, wrapped for pymysql compat."""
+    from tests.conftest import _CompatDB
+    import re as _re
     conn = sqlite3.connect(':memory:')
     conn.row_factory = sqlite3.Row
+    conn.create_function('REGEXP', 2, lambda pattern, string: bool(_re.search(pattern, string or '')))
     conn.execute('CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)')
     for i in range(1, 121):
         conn.execute('INSERT INTO items (id, name) VALUES (?, ?)', (i, f'item_{i}'))
     conn.commit()
-    return conn
+    return _CompatDB(conn)
 
 
 class TestGetPaginatedResult:

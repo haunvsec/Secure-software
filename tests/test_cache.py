@@ -3,7 +3,7 @@
 import time
 from unittest.mock import patch
 
-from app import SimpleCache
+from database import SimpleCache
 
 
 class TestSimpleCache:
@@ -19,7 +19,7 @@ class TestSimpleCache:
     def test_expired_key_returns_none(self):
         c = SimpleCache()
         c.set("key1", "value1", ttl=1)
-        with patch("app.time") as mock_time:
+        with patch("database.time") as mock_time:
             # First call is for set (already done), subsequent for get
             mock_time.time.return_value = time.time() + 2
             assert c.get("key1") is None
@@ -27,7 +27,7 @@ class TestSimpleCache:
     def test_expired_key_is_deleted(self):
         c = SimpleCache()
         c.set("key1", "value1", ttl=1)
-        with patch("app.time") as mock_time:
+        with patch("database.time") as mock_time:
             mock_time.time.return_value = time.time() + 2
             c.get("key1")
             assert "key1" not in c._cache

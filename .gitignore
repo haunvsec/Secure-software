@@ -1,3 +1,44 @@
-cvelistV5/
-.pytest_cache
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.hypothesis/
+htmlcov/
+.coverage
+
+# Database files (large, generated)
+*.db
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+
+# Data directories (cloned repos, too large for git)
+cvelistV5/
+security-advisory-db/
+
+# Logs
+*.log

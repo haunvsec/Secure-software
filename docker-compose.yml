@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  db:
+    image: mariadb:11
+    container_name: ssb-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpass}
+      MARIADB_DATABASE: ${DB_NAME:-cve_database}
+      MARIADB_USER: ${DB_USER:-cvedb}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-cvedb}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./scripts/create_mysql_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ssb-net
+
+  app:
+    build: .
+    container_name: ssb-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-cvedb}
+      DB_PASSWORD: ${DB_PASSWORD:-cvedb}
+      DB_NAME: ${DB_NAME:-cve_database}
+    ports:
+      - "${APP_PORT:-5000}:5000"
+    networks:
+      - ssb-net
+
+volumes:
+  mariadb_data:
+
+networks:
+  ssb-net:
+    driver: bridge

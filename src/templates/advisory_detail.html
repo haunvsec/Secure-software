@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ advisory.id }} | Secure Software Board{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small">
+    <li class="breadcrumb-item"><a href="/advisories" class="text-decoration-none">Advisories</a></li>
+    <li class="breadcrumb-item active">{{ advisory.id }}</li>
+  </ol>
+</nav>
+
+<div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+  <h1 class="h3 mb-0"><i class="bi bi-megaphone me-2"></i>{{ advisory.id }}</h1>
+  <span class="badge bg-info text-dark">{{ advisory.source }}</span>
+  {% if advisory.severity %}
+    {% set sev_colors = {'critical': 'danger', 'high': 'warning', 'medium': 'info', 'low': 'success'} %}
+    <span class="badge bg-{{ sev_colors.get(advisory.severity|lower, 'secondary') }}">{{ advisory.severity|upper }}</span>
+  {% endif %}
+  {% if advisory.cvss_score %}
+    {% set score = advisory.cvss_score %}
+    {% set severity = advisory.severity %}
+    {% include 'components/cvss_badge.html' %}
+  {% endif %}
+</div>
+
+<h2 class="h5 mb-4">{{ advisory.title }}</h2>
+
+<!-- Description -->
+{% if advisory.description %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <h3 class="h6 fw-semibold mb-2">Description</h3>
+    <div class="mb-0 small">{{ advisory.description|safe }}</div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Dates & Info -->
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <table class="table table-sm table-borderless mb-0 small">
+          <tr><td class="text-muted" style="width:100px">Published</td><td>{{ advisory.published_date|format_date }}</td></tr>
+          <tr><td class="text-muted">Modified</td><td>{{ advisory.modified_date|format_date }}</td></tr>
+          <tr><td class="text-muted">Source</td><td>{{ advisory.source }}</td></tr>
+          {% if advisory.url %}
+          <tr><td class="text-muted">URL</td><td><a href="{{ advisory.url }}" target="_blank" rel="noopener" class="text-break small">{{ advisory.url[:60] }}…</a></td></tr>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </div>
+  {% if advisory.solution %}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <h3 class="h6 fw-semibold mb-2">Solution</h3>
+        <p class="mb-0 small">{{ advisory.solution[:500] }}</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Affected Products -->
+{% if affected %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <h3 class="h6 fw-semibold mb-3">Affected Products ({{ affected|length }})</h3>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Product</th><th>Version Range</th><th>Fixed Version</th><th>Matched To</th></tr>
+        </thead>
+        <tbody>
+          {% for ap in affected %}
+          <tr>
+            <td class="small">{{ ap.ecosystem }}/{{ ap.name }}</td>
+            <td class="small"><code>{{ ap.version_range or '—' }}</code></td>
+            <td class="small">
+              {% if ap.fixed_version and ap.fixed_version != 'unspecified' %}
+                <span class="text-success fw-semibold">{{ ap.fixed_version }}</span>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="small">
+              {% if ap.matched_vendor and ap.matched_product %}
+                <a href="/products/{{ ap.matched_vendor }}/{{ ap.matched_product }}" class="text-decoration-none">
+                  {{ ap.matched_vendor }}/{{ ap.matched_product }}
+                </a>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- CVEs -->
+{% if cves %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <h3 class="h6 fw-semibold mb-3">Related CVEs ({{ cves|length }})</h3>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>CVE ID</th><th>Description</th><th>Severity</th><th>CVSS</th></tr>
+        </thead>
+        <tbody>
+          {% for cve in cves %}
+          <tr>
+            <td class="text-nowrap">
+              <a href="/cves/{{ cve.cve_id }}" class="text-decoration-none fw-semibold">{{ cve.cve_id }}</a>
+            </td>
+            <td class="small">{{ (cve.description or '')[:120] }}{% if cve.description and cve.description|length > 120 %}…{% endif %}</td>
+            <td>
+              {% set score = cve.base_score %}
+              {% set severity = cve.severity %}
+              {% include 'components/cvss_badge.html' %}
+            </td>
+            <td class="small">{{ '%.1f' | format(cve.base_score) if cve.base_score is not none else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- References -->
+{% if references %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <h3 class="h6 fw-semibold mb-3">References</h3>
+    {% for ref in references %}
+    <div class="small mb-1">
+      <a href="{{ ref }}" target="_blank" rel="noopener" class="text-decoration-none text-break">
+        <i class="bi bi-link-45deg"></i> {{ ref }}
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

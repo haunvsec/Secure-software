@@ -1,4 +1,0 @@
-# file: /Volumes/DATA/secure_software/app.py
-# hypothesis_version: 6.151.6
-
-[404, 500, 503, 3600, '/', '/assigners', '/cves', '/cves/<cve_id>', '/cves/by-date', '/cves/by-severity', '/cves/by-type', '/products', '/search', '/vendors', '/vendors/<vendor>', '404.html', '500.html', 'A', '__main__', 'assigners', 'assigners.html', 'by_date', 'by_date.html', 'by_severity', 'by_severity.html', 'by_type', 'by_type.html', 'cve_database.db', 'cve_detail.html', 'cve_id', 'cves', 'cves.html', 'cwe', 'db', 'db_error.html', 'fixed_cves.html', 'home', 'index.html', 'items', 'keyword', 'letter', 'max_cve_id', 'month', 'page', 'product', 'product_detail.html', 'products', 'products.html', 'references', 'search', 'search.html', 'severity', 'vendor', 'vendor_detail.html', 'vendors', 'vendors.html', 'version_detail.html', 'year']
