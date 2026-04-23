@@ -3,11 +3,10 @@
 
 1. git pull to get latest changes
 2. git diff to find changed JSON files
-3. Parse and upsert only changed files
+3. Parse and upsert only changed files (MariaDB via SQLAlchemy)
 4. Clear cache
 """
 
-import json
 import logging
 import os
 import subprocess
@@ -74,66 +73,78 @@ def get_changed_files(repo_dir, old_hash, new_hash):
     return files
 
 
-def upsert_cve(db, record):
-    """Insert or update a single CVE record in the database."""
+def _get_engine():
+    """Create a SQLAlchemy engine from environment variables."""
+    from sqlalchemy import create_engine
+    database_url = os.environ.get('DATABASE_URL')
+    if not database_url:
+        host = os.environ.get('DB_HOST', 'localhost')
+        port = os.environ.get('DB_PORT', '3306')
+        user = os.environ.get('DB_USER', 'cvedb')
+        password = os.environ.get('DB_PASSWORD', 'cvedb')
+        database = os.environ.get('DB_NAME', 'cve_database')
+        database_url = f'mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4'
+    return create_engine(database_url)
+
+
+def upsert_cve(session, record):
+    """Insert or update a single CVE record using SQLAlchemy ORM."""
+    from models.orm import Cve, AffectedProduct, CvssScore, CweEntry, Reference
+
     c = record['cve']
-    cursor = db.cursor()
-
-    # Upsert CVE main record
-    cursor.execute(
-        "INSERT OR REPLACE INTO cves VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (c['cve_id'], c['state'], c['assigner_org_id'], c['assigner_short_name'],
-         c['date_reserved'], c['date_published'], c['date_updated'],
-         c['description'], c['severity'], c['data_version'])
-    )
-
-    # Delete old related data and re-insert
     cve_id = c['cve_id']
-    for table in ['affected_products', 'cvss_scores', 'cwe_entries', 'references_table']:
-        cursor.execute(f"DELETE FROM {table} WHERE cve_id = ?", (cve_id,))
+
+    # Delete existing record and related data (cascade handles children)
+    existing = session.query(Cve).filter(Cve.cve_id == cve_id).first()
+    if existing:
+        session.delete(existing)
+        session.flush()
+
+    # Insert new CVE record
+    cve = Cve(
+        cve_id=c['cve_id'], state=c['state'],
+        assigner_org_id=c['assigner_org_id'],
+        assigner_short_name=c['assigner_short_name'],
+        date_reserved=c['date_reserved'], date_published=c['date_published'],
+        date_updated=c['date_updated'], description=c['description'],
+        severity=c['severity'], data_version=c['data_version'],
+    )
+    session.add(cve)
 
     for a in record['affected']:
-        cursor.execute(
-            "INSERT INTO affected_products "
-            "(cve_id, vendor, product, platform, version_start, version_end, "
-            "version_exact, default_status, status, version_end_type) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (a['cve_id'], a['vendor'], a['product'], a['platform'],
-             a['version_start'], a['version_end'], a['version_exact'],
-             a['default_status'], a['status'], a['version_end_type'])
-        )
+        session.add(AffectedProduct(
+            cve_id=cve_id, vendor=a['vendor'], product=a['product'],
+            platform=a['platform'], version_start=a['version_start'],
+            version_end=a['version_end'], version_exact=a['version_exact'],
+            default_status=a['default_status'], status=a['status'],
+            version_end_type=a['version_end_type'],
+        ))
 
     for s in record['cvss']:
-        cursor.execute(
-            "INSERT INTO cvss_scores "
-            "(cve_id, version, vector_string, base_score, base_severity, "
-            "attack_vector, attack_complexity, privileges_required, "
-            "user_interaction, scope, confidentiality_impact, "
-            "integrity_impact, availability_impact, source) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (s['cve_id'], s['version'], s['vector_string'], s['base_score'],
-             s['base_severity'], s['attack_vector'], s['attack_complexity'],
-             s['privileges_required'], s['user_interaction'], s['scope'],
-             s['confidentiality_impact'], s['integrity_impact'],
-             s['availability_impact'], s['source'])
-        )
+        session.add(CvssScore(
+            cve_id=cve_id, version=s['version'],
+            vector_string=s['vector_string'], base_score=s['base_score'],
+            base_severity=s['base_severity'], attack_vector=s['attack_vector'],
+            attack_complexity=s['attack_complexity'],
+            privileges_required=s['privileges_required'],
+            user_interaction=s['user_interaction'], scope=s['scope'],
+            confidentiality_impact=s['confidentiality_impact'],
+            integrity_impact=s['integrity_impact'],
+            availability_impact=s['availability_impact'], source=s['source'],
+        ))
 
     for w in record['cwe']:
-        cursor.execute(
-            "INSERT INTO cwe_entries (cve_id, cwe_id, description) VALUES (?,?,?)",
-            (w['cve_id'], w['cwe_id'], w['description'])
-        )
+        session.add(CweEntry(
+            cve_id=cve_id, cwe_id=w['cwe_id'], description=w['description'],
+        ))
 
     for r in record['references']:
-        cursor.execute(
-            "INSERT INTO references_table (cve_id, url, tags) VALUES (?,?,?)",
-            (r['cve_id'], r['url'], r['tags'])
-        )
-
-    cursor.close()
+        session.add(Reference(
+            cve_id=cve_id, url=r['url'], tags=r['tags'],
+        ))
 
 
-def sync(db=None, repo_dir=None):
+def sync(session=None, repo_dir=None):
     """Run incremental CVE sync. Returns dict with results."""
     repo_dir = repo_dir or DEFAULT_CVE_DIR
     start = time.time()
@@ -155,33 +166,34 @@ def sync(db=None, repo_dir=None):
             result['status'] = 'no_changes'
             return result
 
-        # Get or create DB connection
+        # Get or create SQLAlchemy session
         close_after = False
-        if db is None:
-            import sqlite3
-            db_path = os.environ.get('SQLITE_PATH', 'cve_database.db')
-            db = sqlite3.connect(db_path)
+        if session is None:
+            from sqlalchemy.orm import sessionmaker
+            engine = _get_engine()
+            Session = sessionmaker(bind=engine)
+            session = Session()
             close_after = True
 
         for filepath in changed:
             record = parse_cve_file(filepath)
             if record:
                 try:
-                    upsert_cve(db, record)
+                    upsert_cve(session, record)
                     result['records_updated'] += 1
                 except Exception as e:
                     result['errors'] += 1
                     logger.error(f"Error upserting {filepath}: {e}")
+                    session.rollback()
 
-        db.commit()
+        session.commit()
         if close_after:
-            db.close()
+            session.close()
 
         # Clear cache
         try:
             from database import cache
-            for key in list(cache._cache.keys()):
-                del cache._cache[key]
+            cache.clear()
             logger.info("Cache cleared")
         except Exception:
             pass

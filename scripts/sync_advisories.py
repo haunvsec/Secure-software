@@ -3,11 +3,12 @@
 
 1. git pull to get latest changes
 2. git diff to find changed JSON files
-3. Parse and upsert only changed files with fuzzy matching
+3. Parse and upsert only changed files (MariaDB via SQLAlchemy)
 4. Clear cache
+
+Advisory JSON now uses vendor/product directly — no fuzzy matching needed.
 """
 
-import json
 import logging
 import os
 import subprocess
@@ -17,7 +18,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 
-from import_advisories import parse_advisory, fuzzy_match, build_vendor_product_index
+from import_advisories import parse_advisory
 
 logger = logging.getLogger('sync_advisories')
 
@@ -73,64 +74,66 @@ def get_changed_files(repo_dir, old_hash, new_hash):
     return files
 
 
-def upsert_advisory(db, record, vp_index):
-    """Insert or update a single advisory record."""
-    adv = record['advisory']
-    adv_id = adv['id']
-    cursor = db.cursor()
+def _get_engine():
+    """Create a SQLAlchemy engine from environment variables."""
+    from sqlalchemy import create_engine
+    database_url = os.environ.get('DATABASE_URL')
+    if not database_url:
+        host = os.environ.get('DB_HOST', 'localhost')
+        port = os.environ.get('DB_PORT', '3306')
+        user = os.environ.get('DB_USER', 'cvedb')
+        password = os.environ.get('DB_PASSWORD', 'cvedb')
+        database = os.environ.get('DB_NAME', 'cve_database')
+        database_url = f'mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4'
+    return create_engine(database_url)
 
-    # Upsert advisory
-    cursor.execute(
-        "INSERT OR REPLACE INTO security_advisories "
-        "(id, source, title, description, severity, cvss_score, cvss_vector, "
-        "published_date, modified_date, url, ecosystem, solution, json_file) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (adv['id'], adv['source'], adv['title'], adv['description'],
-         adv['severity'], adv['cvss_score'], adv['cvss_vector'],
-         adv['published_date'], adv['modified_date'], adv['url'],
-         adv['ecosystem'], adv['solution'], adv['json_file'])
+
+def upsert_advisory(session, record):
+    """Insert or update a single advisory record using SQLAlchemy ORM."""
+    from models.orm import (
+        SecurityAdvisory, AdvisoryAffectedProduct, AdvisoryCve, AdvisoryReference,
     )
 
-    # Delete old related data
-    for table in ['advisory_affected_products', 'advisory_cves', 'advisory_references']:
-        cursor.execute(f"DELETE FROM {table} WHERE advisory_id = ?", (adv_id,))
+    adv = record['advisory']
+    adv_id = adv['id']
 
-    # Insert affected products with fuzzy matching
+    # Delete existing record (cascade handles children)
+    existing = session.query(SecurityAdvisory).filter(SecurityAdvisory.id == adv_id).first()
+    if existing:
+        session.delete(existing)
+        session.flush()
+
+    # Insert new advisory
+    advisory = SecurityAdvisory(
+        id=adv['id'], source=adv['source'], title=adv['title'],
+        description=adv['description'], severity=adv['severity'],
+        cvss_score=adv['cvss_score'], cvss_vector=adv['cvss_vector'],
+        published_date=adv['published_date'], modified_date=adv['modified_date'],
+        url=adv['url'], vendor=adv['vendor'],
+        solution=adv['solution'], json_file=adv['json_file'],
+    )
+    session.add(advisory)
+
+    # Insert affected products — vendor/product directly from JSON
     for ap in record['affected']:
-        match = fuzzy_match(ap['ecosystem'], ap['name'], vp_index)
-        mv = match[0] if match else (ap['ecosystem'] or '')
-        mp = match[1] if match else (ap['name'] or '')
-        if not match and mv and mp:
-            new_key = f"{mv.lower()}||{mp.lower()}"
-            if new_key not in vp_index:
-                vp_index[new_key] = (mv, mp)
-
-        cursor.execute(
-            "INSERT INTO advisory_affected_products "
-            "(advisory_id, ecosystem, name, version_range, fixed_version, "
-            "matched_vendor, matched_product) VALUES (?,?,?,?,?,?,?)",
-            (adv_id, ap['ecosystem'], ap['name'],
-             ap['version_range'], ap['fixed_version'], mv, mp)
-        )
+        session.add(AdvisoryAffectedProduct(
+            advisory_id=adv_id,
+            vendor=ap['vendor'],
+            product=ap['product'],
+            version_range=ap['version_range'],
+            fixed_version=ap['fixed_version'],
+        ))
 
     for cve_id in record['cves']:
         if cve_id:
-            cursor.execute(
-                "INSERT INTO advisory_cves (advisory_id, cve_id) VALUES (?,?)",
-                (adv_id, cve_id)
-            )
+            session.add(AdvisoryCve(advisory_id=adv_id, cve_id=cve_id))
 
     for ref_url in record['references']:
         if ref_url:
-            cursor.execute(
-                "INSERT INTO advisory_references (advisory_id, url) VALUES (?,?)",
-                (adv_id, ref_url)
-            )
-
-    cursor.close()
+            session.add(AdvisoryReference(advisory_id=adv_id, url=ref_url))
 
 
-def sync(db=None, repo_dir=None):
+def sync(session=None, repo_dir=None):
     """Run incremental advisory sync. Returns dict with results."""
     repo_dir = repo_dir or DEFAULT_ADVISORY_DIR
     start = time.time()
@@ -152,35 +155,34 @@ def sync(db=None, repo_dir=None):
             result['status'] = 'no_changes'
             return result
 
+        # Get or create SQLAlchemy session
         close_after = False
-        if db is None:
-            import sqlite3
-            db_path = os.environ.get('SQLITE_PATH', 'cve_database.db')
-            db = sqlite3.connect(db_path)
+        if session is None:
+            from sqlalchemy.orm import sessionmaker
+            engine = _get_engine()
+            Session = sessionmaker(bind=engine)
+            session = Session()
             close_after = True
-
-        # Build vendor/product index for fuzzy matching
-        vp_index = build_vendor_product_index(db)
 
         for filepath in changed:
             record = parse_advisory(filepath)
             if record:
                 try:
-                    upsert_advisory(db, record, vp_index)
+                    upsert_advisory(session, record)
                     result['records_updated'] += 1
                 except Exception as e:
                     result['errors'] += 1
                     logger.error(f"Error upserting {filepath}: {e}")
+                    session.rollback()
 
-        db.commit()
+        session.commit()
         if close_after:
-            db.close()
+            session.close()
 
         # Clear cache
         try:
             from database import cache
-            for key in list(cache._cache.keys()):
-                del cache._cache[key]
+            cache.clear()
         except Exception:
             pass
 

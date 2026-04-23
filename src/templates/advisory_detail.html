@@ -72,25 +72,25 @@
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0">
         <thead class="table-light">
-          <tr><th>Product</th><th>Version Range</th><th>Fixed Version</th><th>Matched To</th></tr>
+          <tr><th>Vendor</th><th>Product</th><th>Version Range</th><th>Fixed Version</th></tr>
         </thead>
         <tbody>
           {% for ap in affected %}
           <tr>
-            <td class="small">{{ ap.ecosystem }}/{{ ap.name }}</td>
+            <td class="small">{{ ap.vendor or '—' }}</td>
+            <td class="small">
+              {% if ap.vendor and ap.product %}
+                <a href="/products/{{ ap.vendor }}/{{ ap.product }}" class="text-decoration-none">
+                  {{ ap.product }}
+                </a>
+              {% else %}
+                {{ ap.product or '—' }}
+              {% endif %}
+            </td>
             <td class="small"><code>{{ ap.version_range or '—' }}</code></td>
             <td class="small">
               {% if ap.fixed_version and ap.fixed_version != 'unspecified' %}
                 <span class="text-success fw-semibold">{{ ap.fixed_version }}</span>
-              {% else %}
-                <span class="text-muted">—</span>
-              {% endif %}
-            </td>
-            <td class="small">
-              {% if ap.matched_vendor and ap.matched_product %}
-                <a href="/products/{{ ap.matched_vendor }}/{{ ap.matched_product }}" class="text-decoration-none">
-                  {{ ap.matched_vendor }}/{{ ap.matched_product }}
-                </a>
               {% else %}
                 <span class="text-muted">—</span>
               {% endif %}

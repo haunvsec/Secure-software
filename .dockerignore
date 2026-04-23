@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Data repos (large, mounted as volumes)
+cvelistV5/
+security-advisory-db/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyc
+.pytest_cache/
+.hypothesis/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+
+# Tests (not needed in production image)
+tests/
+
+# Kiro specs
+.kiro/
+
+# Logs
+*.log

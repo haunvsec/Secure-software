@@ -6,21 +6,18 @@ services:
     container_name: ssb-app
     restart: unless-stopped
     environment:
-      DB_TYPE: ${DB_TYPE:-sqlite}
-      SQLITE_PATH: /app/cve_database.db
+      DATABASE_URL: mysql+pymysql://${DB_USER:-cvedb}:${DB_PASSWORD:-cvedb}@db:3306/${DB_NAME:-cve_database}?charset=utf8mb4
       CVE_REPO_PATH: /app/data/cvelistV5
       ADVISORY_REPO_PATH: /app/data/security-advisory-db
       SYNC_INTERVAL_HOURS: ${SYNC_INTERVAL_HOURS:-1}
-      # MariaDB settings (when DB_TYPE=mysql)
-      DB_HOST: ${DB_HOST:-db}
-      DB_PORT: ${DB_PORT:-3306}
-      DB_USER: ${DB_USER:-cvedb}
-      DB_PASSWORD: ${DB_PASSWORD:-cvedb}
-      DB_NAME: ${DB_NAME:-cve_database}
+      DISABLE_SCHEDULER: ${DISABLE_SCHEDULER:-false}
     ports:
       - "${APP_PORT:-5005}:5000"
     volumes:
       - sync_data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - ssb-net
 
@@ -37,7 +34,6 @@ services:
       - "3306:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
-      - ./scripts/create_mysql_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
@@ -46,8 +42,6 @@ services:
       start_period: 30s
     networks:
       - ssb-net
-    profiles:
-      - mysql
 
 volumes:
   mariadb_data:

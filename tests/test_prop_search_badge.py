@@ -1,16 +1,18 @@
 """Property-based tests for product, search, badge, params (Properties 12-15).
 
 Feature: cve-database-website
+Uses SQLAlchemy session-based query functions.
 """
 
 import pytest
 from hypothesis import given, settings, assume, HealthCheck
 from hypothesis import strategies as st
 
-from models import (
+from models.queries import (
     get_product_cves, get_products, search_cves,
     sanitize_page, sanitize_severity, sanitize_year, sanitize_search,
 )
+from models.orm import AffectedProduct
 
 _suppress = [HealthCheck.function_scoped_fixture]
 
@@ -30,10 +32,11 @@ def test_product_cve_association(test_db, data):
 
     result = get_product_cves(test_db, vendor, product, page=1)
     for item in result['items']:
-        row = test_db.execute(
-            "SELECT 1 FROM affected_products WHERE cve_id = ? AND vendor = ? AND product = ?",
-            (item['cve_id'], vendor, product),
-        ).fetchone()
+        row = test_db.query(AffectedProduct).filter(
+            AffectedProduct.cve_id == item['cve_id'],
+            AffectedProduct.vendor == vendor,
+            AffectedProduct.product == product,
+        ).first()
         assert row is not None, \
             f"CVE {item['cve_id']} has no affected_products for {vendor}/{product}"
 
@@ -87,7 +90,6 @@ def test_cvss_badge_color_mapping(score):
     score = round(score, 1)
     expected_sev = _get_expected_severity(score)
     assert expected_sev in _SEVERITY_COLORS
-    # Verify the mapping is consistent
     if score >= 9.0:
         assert expected_sev == 'CRITICAL'
     elif score >= 7.0:

@@ -28,18 +28,18 @@ CREATE TABLE IF NOT EXISTS cves (
 CREATE TABLE IF NOT EXISTS affected_products (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     cve_id VARCHAR(30) NOT NULL,
-    vendor VARCHAR(255),
-    product VARCHAR(255),
-    platform VARCHAR(255),
-    version_start VARCHAR(255),
-    version_end VARCHAR(255),
-    version_exact VARCHAR(255),
+    vendor VARCHAR(1024),
+    product TEXT,
+    platform TEXT,
+    version_start TEXT,
+    version_end TEXT,
+    version_exact TEXT,
     default_status VARCHAR(50),
     status VARCHAR(50),
     version_end_type VARCHAR(30),
     INDEX idx_affected_vendor (vendor),
-    INDEX idx_affected_product (product),
-    INDEX idx_affected_vendor_product (vendor, product),
+    INDEX idx_affected_product (product(255)),
+    INDEX idx_affected_vendor_product (vendor(255), product(255)),
     INDEX idx_affected_cve (cve_id),
     FOREIGN KEY (cve_id) REFERENCES cves(cve_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -99,9 +99,9 @@ CREATE TABLE IF NOT EXISTS security_advisories (
     published_date VARCHAR(50),
     modified_date VARCHAR(50),
     url TEXT,
-    ecosystem VARCHAR(100),
+    vendor VARCHAR(1024),
     solution LONGTEXT,
-    json_file VARCHAR(500),
+    json_file VARCHAR(1024),
     INDEX idx_adv_source (source),
     INDEX idx_adv_severity (severity),
     INDEX idx_adv_published (published_date)
@@ -110,23 +110,21 @@ CREATE TABLE IF NOT EXISTS security_advisories (
 -- Advisory affected products
 CREATE TABLE IF NOT EXISTS advisory_affected_products (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    advisory_id VARCHAR(255) NOT NULL,
-    ecosystem VARCHAR(100),
-    name VARCHAR(255),
-    version_range VARCHAR(255),
-    fixed_version VARCHAR(255),
-    matched_vendor VARCHAR(255),
-    matched_product VARCHAR(255),
+    advisory_id VARCHAR(2048)  NOT NULL,
+    vendor VARCHAR(1024),
+    product VARCHAR(2048),
+    version_range VARCHAR(1024),
+    fixed_version VARCHAR(1024),
     INDEX idx_adv_ap_advisory (advisory_id),
-    INDEX idx_adv_ap_vendor (matched_vendor),
-    INDEX idx_adv_ap_product (matched_product),
+    INDEX idx_adv_ap_vendor (vendor),
+    INDEX idx_adv_ap_product (product(255)),
     FOREIGN KEY (advisory_id) REFERENCES security_advisories(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Advisory CVEs
 CREATE TABLE IF NOT EXISTS advisory_cves (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    advisory_id VARCHAR(255) NOT NULL,
+    advisory_id VARCHAR(2048)  NOT NULL,
     cve_id VARCHAR(30),
     INDEX idx_adv_cves_advisory (advisory_id),
     INDEX idx_adv_cves_cve (cve_id),
@@ -136,7 +134,7 @@ CREATE TABLE IF NOT EXISTS advisory_cves (
 -- Advisory references
 CREATE TABLE IF NOT EXISTS advisory_references (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    advisory_id VARCHAR(255) NOT NULL,
+    advisory_id VARCHAR(2048)  NOT NULL,
     url TEXT,
     INDEX idx_adv_refs_advisory (advisory_id),
     FOREIGN KEY (advisory_id) REFERENCES security_advisories(id) ON DELETE CASCADE

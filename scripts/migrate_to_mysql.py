@@ -17,6 +17,10 @@ DB_PASSWORD = os.environ.get('DB_PASSWORD', 'cvedb')
 DB_NAME = os.environ.get('DB_NAME', 'cve_database')
 BATCH_SIZE = 5000
 
+# Tables with TEXT columns need smaller batches
+TEXT_TABLES = {'affected_products', 'cwe_entries', 'references_table'}
+TEXT_BATCH_SIZE = 1000
+
 TABLES = [
     ('cves', 10),
     ('affected_products', 11),
@@ -24,7 +28,7 @@ TABLES = [
     ('cwe_entries', 4),
     ('references_table', 4),
     ('security_advisories', 13),
-    ('advisory_affected_products', 8),
+    ('advisory_affected_products', 6),
     ('advisory_cves', 3),
     ('advisory_references', 3),
 ]
@@ -40,6 +44,7 @@ def get_mysql_conn():
 
 def migrate_table(sqlite_conn, mysql_conn, table_name, col_count):
     """Migrate a single table from SQLite to MariaDB."""
+    batch_size = TEXT_BATCH_SIZE if table_name in TEXT_TABLES else BATCH_SIZE
     cursor = sqlite_conn.execute(f"SELECT * FROM {table_name}")
     cols = [desc[0] for desc in cursor.description]
     actual_count = len(cols)
@@ -65,7 +70,7 @@ def migrate_table(sqlite_conn, mysql_conn, table_name, col_count):
         if skip_id:
             row_data = row_data[1:]  # skip id column
         batch.append(row_data)
-        if len(batch) >= BATCH_SIZE:
+        if len(batch) >= batch_size:
             my_cursor.executemany(insert_sql, batch)
             mysql_conn.commit()
             total += len(batch)

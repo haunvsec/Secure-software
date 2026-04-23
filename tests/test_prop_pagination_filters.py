@@ -1,6 +1,7 @@
 """Property-based tests for pagination, filters, and sorting (Properties 1-5).
 
 Feature: cve-database-website
+Uses SQLAlchemy session-based query functions.
 """
 
 import math
@@ -8,10 +9,7 @@ import pytest
 from hypothesis import given, settings, assume, HealthCheck
 from hypothesis import strategies as st
 
-from models import (
-    get_paginated_result, get_cves, sanitize_page, sanitize_severity,
-    sanitize_year,
-)
+from models.queries import get_paginated, get_cves, sanitize_page, sanitize_severity, sanitize_year
 
 _suppress = [HealthCheck.function_scoped_fixture]
 

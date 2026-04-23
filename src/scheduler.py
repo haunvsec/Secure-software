@@ -33,12 +33,28 @@ sync_status = {
 SYNC_INTERVAL_HOURS = int(os.environ.get('SYNC_INTERVAL_HOURS', 1))
 
 
+def _get_scripts_dir():
+    """Resolve scripts directory relative to this file or /app."""
+    # In container: /app/scheduler.py → /app/scripts
+    # In dev: src/scheduler.py → scripts/
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    candidate = os.path.join(app_dir, 'scripts')
+    if os.path.isdir(candidate):
+        return candidate
+    # Fallback: parent directory (dev layout: src/ → project root)
+    parent = os.path.dirname(app_dir)
+    candidate = os.path.join(parent, 'scripts')
+    if os.path.isdir(candidate):
+        return candidate
+    return candidate  # return anyway, will fail gracefully
+
+
 def _run_cve_sync():
     """Execute CVE sync job."""
     logger.info("Starting CVE sync job...")
     try:
         # Add scripts to path
-        scripts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'scripts')
+        scripts_dir = _get_scripts_dir()
         if scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
 
@@ -60,7 +76,7 @@ def _run_advisory_sync():
     """Execute advisory sync job."""
     logger.info("Starting advisory sync job...")
     try:
-        scripts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'scripts')
+        scripts_dir = _get_scripts_dir()
         if scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
 

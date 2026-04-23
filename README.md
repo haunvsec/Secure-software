@@ -5,57 +5,36 @@
 ## Tính năng
 
 - Tra cứu ~346,000 CVE từ cvelistV5, duyệt theo vendor/product/severity/CWE/ngày/assigner
-- 839 security advisories từ 27 nguồn (Cisco, GitLab, Jenkins, Spring, AWS, ...)
+- 1,176 security advisories từ 27+ nguồn (Cisco, GitLab, Jenkins, Spring, AWS, ...)
 - Gợi ý phiên bản an toàn tích hợp advisory data, cảnh báo End of Support
 - Phạm vi phiên bản bị ảnh hưởng với link đến danh sách CVE
 - Hỗ trợ CVSS v2/v3/v4
 - Tìm kiếm đa tiêu chí với wildcard
-- Tự động sync dữ liệu mỗi giờ (phút thứ 15)
+- Tự động sync dữ liệu mỗi giờ (APScheduler)
 - API endpoint `/api/sync/status`
 
 ## Yêu cầu
 
 - Python 3.11+
+- MariaDB 11.x
 - Git (cho sync jobs)
 - Podman hoặc Docker (cho container deployment)
 
-## Cài đặt nhanh (Development)
+## Deploy với Podman/Docker (Khuyến nghị)
+
+### Bước 1: Chuẩn bị dữ liệu
 
 ```bash
-# Clone repo
-git clone https://github.com/haunvsec/Secure-software.git
-cd Secure-software
-
-# Cài dependencies
-pip install -r requirements.txt
-
 # Clone dữ liệu CVE
 git clone --depth=1 https://github.com/CVEProject/cvelistV5.git
 
 # Clone dữ liệu advisory
 git clone --depth=1 https://github.com/haunvsec/security-advisory-db.git
 
-# Import dữ liệu CVE vào SQLite
+# Import vào SQLite (nhanh, ~60s)
+pip install -r requirements.txt
 python scripts/import_cves.py
-
-# Import dữ liệu advisory
-python scripts/import_advisories.py
-
-# Chạy ứng dụng
-SQLITE_PATH=cve_database.db python src/app.py
-```
-
-Truy cập http://localhost:5000
-
-## Deploy với Podman/Docker
-
-### Bước 1: Chuẩn bị dữ liệu
-
-```bash
-# Clone và import dữ liệu (nếu chưa có cve_database.db)
-git clone --depth=1 https://github.com/CVEProject/cvelistV5.git
-python scripts/import_cves.py
-python scripts/import_advisories.py
+ADVISORY_DIR=security-advisory-db python scripts/import_advisories_sqlite.py
 ```
 
 ### Bước 2: Cấu hình
@@ -68,40 +47,29 @@ cp .env.example .env
 ### Bước 3: Build và chạy
 
 ```bash
-# Podman
-podman build -t ssb-app .
-podman run -d --name ssb-app -p 5005:5000 \
-  -e DB_TYPE=sqlite \
-  -e SQLITE_PATH=/app/cve_database.db \
-  ssb-app:latest
+podman-compose up -d
+```
 
-# Hoặc dùng docker-compose / podman-compose
-podman-compose up -d app
+### Bước 4: Migrate dữ liệu vào MariaDB
+
+```bash
+# Chờ MariaDB healthy (~30s), rồi migrate từ SQLite
+SQLITE_PATH=cve_database.db python scripts/migrate_to_mysql.py
 ```
 
 Truy cập http://localhost:5005
-
-### Bước 4 (Tùy chọn): Chạy với MariaDB
-
-```bash
-# Start cả app + MariaDB
-DB_TYPE=mysql podman-compose --profile mysql up -d
-
-# Migrate dữ liệu từ SQLite sang MariaDB
-python scripts/migrate_to_mysql.py
-```
 
 ## Cấu trúc dự án
 
 ```
 ├── src/                    # Application source (MVC)
 │   ├── app.py              # Flask app factory
-│   ├── config.py           # Configuration
-│   ├── database.py         # DB connection (SQLite/MariaDB)
+│   ├── config.py           # Configuration (DATABASE_URL)
+│   ├── database.py         # SQLAlchemy engine, session, cache
 │   ├── filters.py          # Jinja2 template filters
-│   ├── scheduler.py        # APScheduler (sync mỗi giờ)
+│   ├── scheduler.py        # APScheduler (sync mỗi giờ phút 15)
 │   ├── safe_version.py     # Safe version algorithm
-│   ├── controllers/        # Route handlers (Blueprints)
+│   ├── controllers/        # Flask Blueprints
 │   │   ├── main.py         # Homepage
 │   │   ├── cves.py         # CVE list + detail
 │   │   ├── browse.py       # By date/type/severity/assigner
@@ -109,38 +77,55 @@ python scripts/migrate_to_mysql.py
 │   │   ├── products.py     # Product detail/versions/fixed
 │   │   ├── search.py       # Search
 │   │   ├── advisories.py   # Advisory list + detail
-│   │   └── api.py          # API endpoints
-│   ├── models/             # Database queries
-│   │   ├── helpers.py      # DB helpers, sanitization, pagination
-│   │   ├── cves.py         # CVE queries
-│   │   ├── browse.py       # Browse queries
-│   │   ├── vendors.py      # Vendor/product queries
-│   │   ├── products.py     # Version/fixed queries
-│   │   ├── search.py       # Search queries
-│   │   └── advisories.py   # Advisory queries
-│   ├── templates/          # Jinja2 templates
-│   └── static/             # CSS, JS, fonts
+│   │   └── api.py          # /api/sync/status
+│   ├── models/             # SQLAlchemy ORM + query functions
+│   │   ├── orm.py          # Re-exports all ORM classes
+│   │   ├── cve.py          # Cve, AffectedProduct, CvssScore, CweEntry, Reference
+│   │   ├── advisory.py     # SecurityAdvisory, AdvisoryAffectedProduct, AdvisoryCve, AdvisoryReference
+│   │   └── queries.py      # Complex query functions (pagination, stats, search)
+│   ├── templates/          # Jinja2 templates + Bootstrap 5
+│   └── static/             # CSS, JS, fonts (Bootstrap served locally)
 ├── scripts/                # Import & sync scripts
-│   ├── import_cves.py      # Full CVE import
-│   ├── import_advisories.py # Full advisory import
-│   ├── sync_cves.py        # Incremental CVE sync
-│   ├── sync_advisories.py  # Incremental advisory sync
-│   ├── migrate_to_mysql.py # SQLite → MariaDB migration
-│   ├── create_mysql_schema.sql
-│   └── init_db.sh
-├── tests/                  # 70 tests (unit + property-based)
+│   ├── import_cves.py              # Full CVE import → SQLite
+│   ├── import_cves_mysql.py        # Full CVE import → MariaDB (direct)
+│   ├── import_advisories.py        # Advisory parser + MariaDB import
+│   ├── import_advisories_sqlite.py # Advisory import → SQLite
+│   ├── sync_cves.py                # Incremental CVE sync (git pull + diff)
+│   ├── sync_advisories.py          # Incremental advisory sync (git pull + diff)
+│   ├── migrate_to_mysql.py         # SQLite → MariaDB batch migration
+│   ├── create_mysql_schema.sql     # MariaDB schema DDL
+│   ├── entrypoint.sh               # Container entrypoint (gunicorn)
+│   └── init_db.sh                  # DB initialization helper
+├── tests/                  # Property-based tests (Hypothesis) + unit tests
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
 └── .env.example
 ```
 
+## Database Schema
+
+MariaDB only (SQLAlchemy ORM). Bảng chính:
+
+| Bảng | Rows | Mô tả |
+|---|---|---|
+| `cves` | 346,000 | CVE records |
+| `affected_products` | 1,107,755 | Sản phẩm bị ảnh hưởng (vendor/product/version) |
+| `cvss_scores` | 189,693 | Điểm CVSS v2/v3/v4 |
+| `cwe_entries` | 326,888 | CWE classifications |
+| `references_table` | 1,113,847 | URL tham khảo |
+| `security_advisories` | 1,176 | Security advisories |
+| `advisory_affected_products` | 535 | Sản phẩm bị ảnh hưởng (vendor/product trực tiếp từ JSON) |
+| `advisory_cves` | 13,848 | CVE liên kết với advisory |
+| `advisory_references` | 2,037 | URL tham khảo advisory |
+
+Ghi chú: `affected_products.product/platform/version_*` dùng TEXT vì dữ liệu CVE thực tế có giá trị lên tới 2048 ký tự.
+
 ## Environment Variables
 
 | Variable | Default | Mô tả |
 |---|---|---|
-| `DB_TYPE` | `sqlite` | `sqlite` hoặc `mysql` |
-| `SQLITE_PATH` | `cve_database.db` | Đường dẫn file SQLite |
+| `DATABASE_URL` | — | SQLAlchemy URL (ưu tiên nếu có) |
 | `DB_HOST` | `localhost` | MariaDB host |
 | `DB_PORT` | `3306` | MariaDB port |
 | `DB_USER` | `cvedb` | MariaDB user |

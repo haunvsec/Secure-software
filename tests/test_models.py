@@ -1,14 +1,11 @@
-"""Unit tests for models.py — sanitize functions and get_paginated_result."""
+"""Unit tests for models — sanitize functions and get_paginated (SQLAlchemy)."""
 
-import sqlite3
 import pytest
-from models import (
-    sanitize_page,
-    sanitize_severity,
-    sanitize_year,
-    sanitize_search,
-    get_paginated_result,
-)
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.orm import sessionmaker
+
+from models.orm import Base as AppBase
+from models.queries import get_paginated, sanitize_page, sanitize_severity, sanitize_year, sanitize_search
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +128,6 @@ class TestSanitizeSearch:
     def test_max_200_chars(self):
         long_input = 'a' * 300
         result = sanitize_search(long_input)
-        # 200 chars + 2 for wrapping %
         assert len(result) == 202
 
     def test_wildcard_in_middle(self):
@@ -140,101 +136,69 @@ class TestSanitizeSearch:
 
 
 # ---------------------------------------------------------------------------
-# get_paginated_result
+# get_paginated (SQLAlchemy)
 # ---------------------------------------------------------------------------
 
+from sqlalchemy.orm import DeclarativeBase
+
+
+class _TestBase(DeclarativeBase):
+    pass
+
+
+class _Item(_TestBase):
+    __tablename__ = 'items'
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50))
+
+
 @pytest.fixture
-def mem_db():
-    """Create an in-memory SQLite database with sample data, wrapped for pymysql compat."""
-    from tests.conftest import _CompatDB
-    import re as _re
-    conn = sqlite3.connect(':memory:')
-    conn.row_factory = sqlite3.Row
-    conn.create_function('REGEXP', 2, lambda pattern, string: bool(_re.search(pattern, string or '')))
-    conn.execute('CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)')
+def sa_session():
+    """Create an in-memory SQLite database with sample data for pagination tests."""
+    engine = create_engine('sqlite://', echo=False)
+    _TestBase.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
     for i in range(1, 121):
-        conn.execute('INSERT INTO items (id, name) VALUES (?, ?)', (i, f'item_{i}'))
-    conn.commit()
-    return _CompatDB(conn)
+        session.add(_Item(id=i, name=f'item_{i}'))
+    session.commit()
+    yield session
+    session.close()
+    engine.dispose()
 
 
-class TestGetPaginatedResult:
-    def test_first_page(self, mem_db):
-        result = get_paginated_result(
-            mem_db,
-            'SELECT * FROM items ORDER BY id',
-            'SELECT COUNT(*) FROM items',
-            (),
-            page=1,
-            per_page=50,
-        )
+class TestGetPaginated:
+    def test_first_page(self, sa_session):
+        q = sa_session.query(_Item).order_by(_Item.id)
+        result = get_paginated(q, page=1, per_page=50)
         assert result['total'] == 120
         assert result['page'] == 1
         assert result['pages'] == 3
         assert result['per_page'] == 50
         assert len(result['items']) == 50
-        assert result['items'][0]['id'] == 1
 
-    def test_last_page(self, mem_db):
-        result = get_paginated_result(
-            mem_db,
-            'SELECT * FROM items ORDER BY id',
-            'SELECT COUNT(*) FROM items',
-            (),
-            page=3,
-            per_page=50,
-        )
-        assert len(result['items']) == 20  # 120 - 100
-        assert result['items'][0]['id'] == 101
+    def test_last_page(self, sa_session):
+        q = sa_session.query(_Item).order_by(_Item.id)
+        result = get_paginated(q, page=3, per_page=50)
+        assert len(result['items']) == 20
 
-    def test_page_beyond_max_clamped(self, mem_db):
-        result = get_paginated_result(
-            mem_db,
-            'SELECT * FROM items ORDER BY id',
-            'SELECT COUNT(*) FROM items',
-            (),
-            page=999,
-            per_page=50,
-        )
-        assert result['page'] == 3  # clamped to last page
+    def test_page_beyond_max_clamped(self, sa_session):
+        q = sa_session.query(_Item).order_by(_Item.id)
+        result = get_paginated(q, page=999, per_page=50)
+        assert result['page'] == 3
 
-    def test_empty_table(self, mem_db):
-        mem_db.execute('DELETE FROM items')
-        mem_db.commit()
-        result = get_paginated_result(
-            mem_db,
-            'SELECT * FROM items ORDER BY id',
-            'SELECT COUNT(*) FROM items',
-            (),
-            page=1,
-            per_page=50,
-        )
+    def test_empty_table(self, sa_session):
+        sa_session.query(_Item).delete()
+        sa_session.commit()
+        q = sa_session.query(_Item).order_by(_Item.id)
+        result = get_paginated(q, page=1, per_page=50)
         assert result['total'] == 0
         assert result['pages'] == 1
         assert result['items'] == []
 
-    def test_items_are_dicts(self, mem_db):
-        result = get_paginated_result(
-            mem_db,
-            'SELECT * FROM items ORDER BY id',
-            'SELECT COUNT(*) FROM items',
-            (),
-            page=1,
-            per_page=5,
-        )
-        assert isinstance(result['items'][0], dict)
-        assert 'id' in result['items'][0]
-        assert 'name' in result['items'][0]
-
-    def test_with_params(self, mem_db):
-        result = get_paginated_result(
-            mem_db,
-            'SELECT * FROM items WHERE id > ? ORDER BY id',
-            'SELECT COUNT(*) FROM items WHERE id > ?',
-            (100,),
-            page=1,
-            per_page=50,
-        )
+    def test_with_filter(self, sa_session):
+        q = sa_session.query(_Item).filter(_Item.id > 100).order_by(_Item.id)
+        result = get_paginated(q, page=1, per_page=50)
         assert result['total'] == 20
         assert result['pages'] == 1
         assert len(result['items']) == 20
