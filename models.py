@@ -760,39 +760,63 @@ def get_product_version_ranges(db, vendor: str, product: str) -> list[dict]:
 # Product version model functions
 # ---------------------------------------------------------------------------
 
-def get_product_versions(db, vendor: str, product: str) -> list[dict]:
-    """Return list of versions for a product with CVE counts, sorted by version desc (semver).
+def get_product_versions(db, vendor: str, product: str) -> dict:
+    """Return exact affected versions and version ranges for a product.
 
-    Determines version from version_exact (if set) or version_start.
-    Excludes empty/null versions.
+    Returns dict with:
+      - exact_versions: list of {version, cve_count} — specific affected versions
+        (from version_exact, no range), sorted by semver desc
+      - version_ranges: list of {version_start, version_end, version_end_type, cve_count}
+        — affected ranges, sorted by version_end desc
     """
     from safe_version import parse_version
 
-    rows = db.execute(
-        "SELECT "
-        "  CASE WHEN version_exact != '' AND version_exact IS NOT NULL "
-        "       THEN version_exact "
-        "       WHEN version_start != '' AND version_start IS NOT NULL "
-        "       THEN version_start "
-        "       ELSE NULL END AS version, "
-        "  COUNT(DISTINCT cve_id) AS cve_count "
+    _JUNK = {'', 'n/a', '0', 'unspecified', '-', '*', 'N/A'}
+
+    # Exact versions: version_exact set, no range
+    exact_rows = db.execute(
+        "SELECT version_exact AS version, COUNT(DISTINCT cve_id) AS cve_count "
         "FROM affected_products "
         "WHERE vendor = ? AND product = ? "
-        "GROUP BY version "
-        "HAVING version IS NOT NULL AND version != '' ",
+        "AND version_exact != '' AND version_exact IS NOT NULL "
+        "AND (version_end = '' OR version_end IS NULL) "
+        "GROUP BY version_exact "
+        "ORDER BY cve_count DESC",
         (vendor, product),
     ).fetchall()
-    items = [dict(r) for r in rows]
+    exact = [dict(r) for r in exact_rows if r['version'] not in _JUNK]
 
-    # Sort by parsed version descending; unparseable versions go to the end
     def _sort_key(item):
         parsed = parse_version(item['version'])
         if parsed is None:
-            return (0,)  # unparseable → bottom
-        return (1,) + parsed  # parseable → sort by tuple desc
+            return (0,)
+        return (1,) + parsed
 
-    items.sort(key=_sort_key, reverse=True)
-    return items
+    exact.sort(key=_sort_key, reverse=True)
+
+    # Version ranges: version_start → version_end
+    range_rows = db.execute(
+        "SELECT version_start, version_end, version_end_type, "
+        "       COUNT(DISTINCT cve_id) AS cve_count "
+        "FROM affected_products "
+        "WHERE vendor = ? AND product = ? "
+        "AND version_end != '' AND version_end IS NOT NULL "
+        "AND (version_exact = '' OR version_exact IS NULL) "
+        "GROUP BY version_start, version_end, version_end_type "
+        "ORDER BY cve_count DESC",
+        (vendor, product),
+    ).fetchall()
+    ranges = [dict(r) for r in range_rows]
+
+    def _range_sort_key(item):
+        parsed = parse_version(item['version_end'])
+        if parsed is None:
+            return (0,)
+        return (1,) + parsed
+
+    ranges.sort(key=_range_sort_key, reverse=True)
+
+    return {'exact_versions': exact, 'version_ranges': ranges}
 
 
 def get_version_detail(db, vendor: str, product: str, version: str) -> dict | None:

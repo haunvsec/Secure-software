@@ -51,7 +51,10 @@
     <button class="nav-link" id="versions-tab" data-bs-toggle="tab" data-bs-target="#tab-versions"
             type="button" role="tab" aria-controls="tab-versions" aria-selected="false">
       <i class="bi bi-tags me-1"></i>Danh sách phiên bản
-      {% if versions is defined and versions %}<span class="badge bg-secondary ms-1">{{ versions|length }}</span>{% endif %}
+      {% if versions is defined %}
+        {% set ver_total = (versions.exact_versions|length if versions.exact_versions else 0) + (versions.version_ranges|length if versions.version_ranges else 0) %}
+        {% if ver_total > 0 %}<span class="badge bg-secondary ms-1">{{ ver_total }}</span>{% endif %}
+      {% endif %}
     </button>
   </li>
   <li class="nav-item" role="presentation">
@@ -111,14 +114,18 @@
 
   <!-- Tab 2: Version List -->
   <div class="tab-pane fade p-4" id="tab-versions" role="tabpanel" aria-labelledby="versions-tab">
-    {% if versions is defined and versions %}
-    <div class="table-responsive">
+    {% if versions is defined %}
+
+    {# Exact affected versions #}
+    {% if versions.exact_versions %}
+    <h3 class="h6 fw-semibold mb-3"><i class="bi bi-tag me-1"></i>Phiên bản bị ảnh hưởng ({{ versions.exact_versions|length }})</h3>
+    <div class="table-responsive mb-4">
       <table class="table table-sm table-hover mb-0">
         <thead class="table-light">
           <tr><th>Version</th><th>CVE Count</th></tr>
         </thead>
         <tbody>
-          {% for v in versions[:20] %}
+          {% for v in versions.exact_versions[:20] %}
           <tr>
             <td>
               <a href="/products/{{ product_info.vendor }}/{{ product_info.product }}/versions/{{ v.version }}"
@@ -130,11 +137,51 @@
         </tbody>
       </table>
     </div>
-    {% if versions|length > 20 %}
-    <div class="mt-2">
-      <small class="text-muted">Hiển thị 20 / {{ versions|length }} phiên bản.</small>
-    </div>
+    {% if versions.exact_versions|length > 20 %}
+    <small class="text-muted">Hiển thị 20 / {{ versions.exact_versions|length }} phiên bản.</small>
     {% endif %}
+    {% endif %}
+
+    {# Version ranges #}
+    {% if versions.version_ranges %}
+    <h3 class="h6 fw-semibold mb-3"><i class="bi bi-arrow-left-right me-1"></i>Phạm vi phiên bản bị ảnh hưởng ({{ versions.version_ranges|length }})</h3>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Range</th><th>Type</th><th>CVE Count</th></tr>
+        </thead>
+        <tbody>
+          {% for r in versions.version_ranges[:20] %}
+          <tr>
+            <td class="small">
+              <code>{{ r.version_start or '*' }}</code>
+              <i class="bi bi-arrow-right mx-1"></i>
+              <code>{{ r.version_end }}</code>
+            </td>
+            <td class="small">
+              {% if r.version_end_type == 'lessThan' %}
+                <span class="text-muted">&lt; {{ r.version_end }}</span>
+              {% elif r.version_end_type == 'lessThanOrEqual' %}
+                <span class="text-muted">&le; {{ r.version_end }}</span>
+              {% else %}
+                <span class="text-muted">{{ r.version_end_type or '—' }}</span>
+              {% endif %}
+            </td>
+            <td><span class="badge bg-primary">{{ '{:,}'.format(r.cve_count) }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if versions.version_ranges|length > 20 %}
+    <small class="text-muted d-block mt-2">Hiển thị 20 / {{ versions.version_ranges|length }} phạm vi.</small>
+    {% endif %}
+    {% endif %}
+
+    {% if not versions.exact_versions and not versions.version_ranges %}
+    <p class="text-muted mb-0">Không có dữ liệu phiên bản.</p>
+    {% endif %}
+
     {% else %}
     <p class="text-muted mb-0">Không có dữ liệu phiên bản.</p>
     {% endif %}
