@@ -23,6 +23,10 @@ def create_app(config_class=Config):
     for bp in ALL_BLUEPRINTS:
         app.register_blueprint(bp)
 
+    # Initialize scheduler (background sync)
+    from scheduler import init_scheduler
+    init_scheduler(app)
+
     # Error handlers
     @app.errorhandler(404)
     def page_not_found(e):

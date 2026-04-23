@@ -7,6 +7,7 @@ from controllers.vendors import vendors_bp
 from controllers.products import products_bp
 from controllers.search import search_bp
 from controllers.advisories import advisories_bp
+from controllers.api import api_bp
 
 ALL_BLUEPRINTS = [
     main_bp,
@@ -16,4 +17,5 @@ ALL_BLUEPRINTS = [
     products_bp,
     search_bp,
     advisories_bp,
+    api_bp,
 ]
