@@ -271,9 +271,11 @@ def get_cwe_types(session: Session, page: int) -> dict:
         CweEntry.cwe_id,
         CweEntry.description,
         func.count(distinct(CweEntry.cve_id)).label('cve_count'),
-    ).filter(
+        func.max(Cve.date_published).label('latest_date'),
+    ).join(Cve, CweEntry.cve_id == Cve.cve_id).filter(
         CweEntry.cwe_id.isnot(None), CweEntry.cwe_id != '',
-    ).group_by(CweEntry.cwe_id).order_by(desc('cve_count'))
+        Cve.state == 'PUBLISHED',
+    ).group_by(CweEntry.cwe_id).order_by(desc('latest_date'))
 
     result = get_paginated(q, page)
     result['items'] = [_row_to_dict(r) for r in result['items']]
@@ -350,15 +352,16 @@ def get_cves_by_severity(session: Session, severity: str, page: int) -> dict:
 # ---------------------------------------------------------------------------
 
 def get_assigners(session: Session, page: int) -> dict:
-    """Paginated assigners with CVE counts, sorted descending."""
+    """Paginated assigners sorted by latest CVE date."""
     q = session.query(
         Cve.assigner_short_name,
         func.count().label('cve_count'),
+        func.max(Cve.date_published).label('latest_date'),
     ).filter(
         Cve.state == 'PUBLISHED',
         Cve.assigner_short_name.isnot(None),
         Cve.assigner_short_name != '',
-    ).group_by(Cve.assigner_short_name).order_by(desc('cve_count'))
+    ).group_by(Cve.assigner_short_name).order_by(desc('latest_date'))
 
     result = get_paginated(q, page)
     result['items'] = [_row_to_dict(r) for r in result['items']]
@@ -385,15 +388,17 @@ def get_cves_by_assigner(session: Session, assigner: str, page: int) -> dict:
 
 def get_vendors(session: Session, letter: str | None = None,
                     search: str | None = None, page: int = 1) -> dict:
-    """Paginated vendors filtered by letter or search, excluding n/a and empty."""
+    """Paginated vendors filtered by letter or search, sorted by latest CVE date."""
     q = session.query(
         AffectedProduct.vendor,
         func.count(distinct(AffectedProduct.product)).label('product_count'),
         func.count(distinct(AffectedProduct.cve_id)).label('vuln_count'),
-    ).filter(
+        func.max(Cve.date_published).label('latest_date'),
+    ).join(Cve, AffectedProduct.cve_id == Cve.cve_id).filter(
         AffectedProduct.vendor != '',
         AffectedProduct.vendor != 'n/a',
         AffectedProduct.vendor.isnot(None),
+        Cve.state == 'PUBLISHED',
     )
 
     if search:
@@ -407,7 +412,7 @@ def get_vendors(session: Session, letter: str | None = None,
     else:
         q = q.filter(func.lower(AffectedProduct.vendor).like('a%'))
 
-    q = q.group_by(AffectedProduct.vendor).order_by(AffectedProduct.vendor)
+    q = q.group_by(AffectedProduct.vendor).order_by(desc('latest_date'))
     result = get_paginated(q, page)
     result['items'] = [_row_to_dict(r) for r in result['items']]
     return result
@@ -440,16 +445,18 @@ def get_vendor_detail(session: Session, vendor: str) -> dict | None:
 
 
 def get_vendor_products(session: Session, vendor: str, page: int) -> dict:
-    """Paginated products for a vendor with CVE counts."""
+    """Paginated products for a vendor with CVE counts, sorted by latest CVE date."""
     q = session.query(
         AffectedProduct.product,
         func.count(distinct(AffectedProduct.cve_id)).label('cve_count'),
-    ).filter(
+        func.max(Cve.date_published).label('latest_date'),
+    ).join(Cve, AffectedProduct.cve_id == Cve.cve_id).filter(
         AffectedProduct.vendor == vendor,
         AffectedProduct.product != '',
         AffectedProduct.product != 'n/a',
         AffectedProduct.product.isnot(None),
-    ).group_by(AffectedProduct.product).order_by(desc('cve_count'))
+        Cve.state == 'PUBLISHED',
+    ).group_by(AffectedProduct.product).order_by(desc('latest_date'))
 
     result = get_paginated(q, page)
     result['items'] = [_row_to_dict(r) for r in result['items']]
@@ -461,22 +468,24 @@ def get_vendor_products(session: Session, vendor: str, page: int) -> dict:
 # ---------------------------------------------------------------------------
 
 def get_products(session: Session, search: str | None = None, page: int = 1) -> dict:
-    """Paginated products (most popular by CVE count), with optional search."""
+    """Paginated products sorted by latest CVE date, with optional search."""
     q = session.query(
         AffectedProduct.product,
         AffectedProduct.vendor,
         func.count(distinct(AffectedProduct.cve_id)).label('cve_count'),
-    ).filter(
+        func.max(Cve.date_published).label('latest_date'),
+    ).join(Cve, AffectedProduct.cve_id == Cve.cve_id).filter(
         AffectedProduct.product != '',
         AffectedProduct.product != 'n/a',
         AffectedProduct.product.isnot(None),
+        Cve.state == 'PUBLISHED',
     )
 
     if search:
         search_pattern = sanitize_search(search)
         q = q.filter(AffectedProduct.product.like(search_pattern))
 
-    q = q.group_by(AffectedProduct.vendor, AffectedProduct.product).order_by(desc('cve_count'))
+    q = q.group_by(AffectedProduct.vendor, AffectedProduct.product).order_by(desc('latest_date'))
     result = get_paginated(q, page)
     result['items'] = [_row_to_dict(r) for r in result['items']]
     return result
@@ -807,11 +816,12 @@ def get_advisories(session: Session, page: int, source: str | None = None,
 
 
 def get_advisory_sources(session: Session) -> list[dict]:
-    """Advisory sources with counts."""
+    """Advisory sources with counts, sorted by latest published date."""
     rows = session.query(
         SecurityAdvisory.source,
         func.count().label('count'),
-    ).group_by(SecurityAdvisory.source).order_by(desc('count')).all()
+        func.max(SecurityAdvisory.published_date).label('latest_date'),
+    ).group_by(SecurityAdvisory.source).order_by(desc('latest_date')).all()
     return [_row_to_dict(r) for r in rows]
 
 
@@ -842,7 +852,7 @@ def get_advisory_cves(session: Session, advisory_id: str) -> list[dict]:
         CvssScore, AdvisoryCve.cve_id == CvssScore.cve_id
     ).filter(
         AdvisoryCve.advisory_id == advisory_id,
-    ).group_by(AdvisoryCve.cve_id).order_by(AdvisoryCve.cve_id).all()
+    ).group_by(AdvisoryCve.cve_id).order_by(desc(Cve.date_published)).all()
     return [_row_to_dict(r) for r in rows]
 
 
