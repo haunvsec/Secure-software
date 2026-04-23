@@ -31,7 +31,7 @@
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-body">
     <h3 class="h6 fw-semibold mb-2">Description</h3>
-    <div class="mb-0 small">{{ advisory.description|safe }}</div>
+    <div class="mb-0 small">{{ advisory.description|sanitize_html }}</div>
   </div>
 </div>
 {% endif %}

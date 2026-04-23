@@ -57,3 +57,34 @@ Các thay đổi nhỏ sau KHÔNG cần cập nhật spec trước:
 - Code: English (variable names, function names, comments)
 - UI labels: Tiếng Việt hoặc English tùy context
 - Tài liệu spec: Tiếng Việt
+
+## Bảo mật (Security Rules)
+
+Mọi code PHẢI tuân thủ các quy tắc bảo mật sau:
+
+### SQL Injection Prevention
+- LUÔN dùng parameterized queries (`%s` cho MariaDB, `?` cho SQLite) — KHÔNG BAO GIỜ nối string user input vào SQL
+- Biến `{where}` trong f-string SQL chỉ chứa hardcoded conditions + `%s` placeholders, KHÔNG chứa user input trực tiếp
+- Tất cả user input từ `request.args` PHẢI đi qua `sanitize_*()` functions trước khi dùng trong query
+
+### XSS Prevention
+- KHÔNG dùng `|safe` filter trong templates — dùng `|sanitize_html` thay thế (strip scripts, event handlers)
+- Jinja2 auto-escaping mặc định cho tất cả output
+- HTML từ nguồn bên ngoài (advisory descriptions) PHẢI qua `sanitize_html` filter
+
+### Input Validation
+- `sanitize_page()` — chỉ chấp nhận int >= 1
+- `sanitize_severity()` — chỉ chấp nhận CRITICAL/HIGH/MEDIUM/LOW
+- `sanitize_year()` — chỉ chấp nhận 1999-2099
+- `sanitize_search()` — escape `%`, `_`, convert `*` → `%`, max 200 chars
+- CVE ID validation — regex `^CVE-\d{4}-\d+$` trước khi redirect
+
+### Open Redirect Prevention
+- Chỉ redirect đến internal paths (`/cves/...`), KHÔNG redirect đến URL từ user input
+
+### Path Traversal Prevention
+- `<path:>` route params chỉ dùng làm DB lookup keys, KHÔNG dùng làm file paths
+
+### Dependency Security
+- KHÔNG dùng `eval()`, `exec()`, `os.system()` với user input
+- Subprocess calls trong sync scripts chỉ dùng hardcoded commands, KHÔNG interpolate user input
