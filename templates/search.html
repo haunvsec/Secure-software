@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+
+{% block title %}Search CVEs | CVE Database{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4"><i class="bi bi-search me-2"></i>Search CVEs</h1>
+
+<!-- Search Form -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <form method="get" action="/search">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label for="cveId" class="form-label small fw-semibold">CVE ID</label>
+          <input type="text" name="cve_id" id="cveId" class="form-control form-control-sm"
+                 placeholder="e.g. CVE-2024-1234" value="{{ q_cve_id or '' }}">
+        </div>
+        <div class="col-md-6">
+          <label for="keyword" class="form-label small fw-semibold">Keyword (description)</label>
+          <input type="text" name="keyword" id="keyword" class="form-control form-control-sm"
+                 placeholder="e.g. buffer overflow" value="{{ q_keyword or '' }}">
+        </div>
+        <div class="col-md-6">
+          <label for="vendor" class="form-label small fw-semibold">Vendor</label>
+          <input type="text" name="vendor" id="vendor" class="form-control form-control-sm"
+                 placeholder="e.g. microsoft (use * as wildcard)" value="{{ q_vendor or '' }}">
+        </div>
+        <div class="col-md-6">
+          <label for="product" class="form-label small fw-semibold">Product</label>
+          <input type="text" name="product" id="product" class="form-control form-control-sm"
+                 placeholder="e.g. chrome (use * as wildcard)" value="{{ q_product or '' }}">
+        </div>
+      </div>
+      <div class="mt-3">
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Search</button>
+        <a href="/search" class="btn btn-outline-secondary btn-sm ms-2">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if searched %}
+<!-- Results -->
+{% if pagination and pagination.total > 0 %}
+<div class="text-muted small mb-3">{{ '{:,}'.format(pagination.total) }} results found</div>
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>CVE ID</th><th>Description</th><th>Severity</th><th>CVSS</th><th>Date</th></tr>
+        </thead>
+        <tbody>
+          {% for cve in cves %}
+          <tr>
+            <td class="text-nowrap"><a href="/cves/{{ cve.cve_id }}" class="text-decoration-none fw-semibold">{{ cve.cve_id }}</a></td>
+            <td class="small">{{ cve.description[:150] }}{% if cve.description and cve.description|length > 150 %}…{% endif %}</td>
+            <td>{% set score = cve.base_score %}{% set severity = cve.severity %}{% include 'components/cvss_badge.html' %}</td>
+            <td class="text-nowrap small">{{ '%.1f' | format(cve.base_score) if cve.base_score is not none else 'N/A' }}</td>
+            <td class="text-nowrap small text-muted">{{ cve.date_published[:10] if cve.date_published else 'N/A' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% set base_url = '/search' %}
+{% include 'components/pagination.html' %}
+
+{% else %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body text-center py-5">
+    <i class="bi bi-search text-muted" style="font-size: 2rem;"></i>
+    <p class="mt-3 mb-1 fw-semibold">Không tìm thấy kết quả</p>
+    <p class="text-muted small">Thử lại với từ khóa khác hoặc sử dụng wildcard (*) để mở rộng tìm kiếm.</p>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

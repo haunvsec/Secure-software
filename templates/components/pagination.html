@@ -1,0 +1,54 @@
+<!-- Pagination Component -->
+<!-- Receives: pagination dict {page, pages, total, per_page}, base_url string -->
+
+{% if pagination and pagination.pages > 1 %}
+<nav aria-label="Page navigation">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
+    <small class="text-muted">
+      Showing {{ ((pagination.page - 1) * pagination.per_page) + 1 }}–{{ [pagination.page * pagination.per_page, pagination.total] | min }}
+      of {{ pagination.total }} results
+    </small>
+
+    <ul class="pagination pagination-sm mb-0">
+      {# Build query string preserving existing params but replacing page #}
+      {% set ns = namespace(qs='') %}
+      {% for key, val in request.args.items() %}
+        {% if key != 'page' %}
+          {% if ns.qs %}{% set ns.qs = ns.qs ~ '&' %}{% endif %}
+          {% set ns.qs = ns.qs ~ key ~ '=' ~ val %}
+        {% endif %}
+      {% endfor %}
+      {% if ns.qs %}
+        {% set base = base_url ~ '?' ~ ns.qs ~ '&page=' %}
+      {% else %}
+        {% set base = base_url ~ '?page=' %}
+      {% endif %}
+
+      {# First #}
+      <li class="page-item{% if pagination.page == 1 %} disabled{% endif %}">
+        <a class="page-link" href="{{ base }}1" aria-label="First">&laquo; First</a>
+      </li>
+
+      {# Previous #}
+      <li class="page-item{% if pagination.page == 1 %} disabled{% endif %}">
+        <a class="page-link" href="{{ base }}{{ pagination.page - 1 }}" aria-label="Previous">&lsaquo; Prev</a>
+      </li>
+
+      {# Current page indicator #}
+      <li class="page-item active" aria-current="page">
+        <span class="page-link">Page {{ pagination.page }} of {{ pagination.pages }}</span>
+      </li>
+
+      {# Next #}
+      <li class="page-item{% if pagination.page == pagination.pages %} disabled{% endif %}">
+        <a class="page-link" href="{{ base }}{{ pagination.page + 1 }}" aria-label="Next">Next &rsaquo;</a>
+      </li>
+
+      {# Last #}
+      <li class="page-item{% if pagination.page == pagination.pages %} disabled{% endif %}">
+        <a class="page-link" href="{{ base }}{{ pagination.pages }}" aria-label="Last">Last &raquo;</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+{% endif %}

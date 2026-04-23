@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+
+{% block title %}Browse CVEs{% if current_year %} — {{ current_year }}{% endif %}{% if current_severity %} — {{ current_severity }}{% endif %} | CVE Database{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4"><i class="bi bi-list-ul me-2"></i>Browse CVEs</h1>
+
+<!-- Filter Bar -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <form method="get" action="/cves" class="row g-3 align-items-end">
+      <div class="col-auto">
+        <label for="yearFilter" class="form-label small fw-semibold">Year</label>
+        <select name="year" id="yearFilter" class="form-select form-select-sm">
+          <option value="">All Years</option>
+          {% for y in range(2025, 1998, -1) %}
+          <option value="{{ y }}"{% if current_year == y %} selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <label for="severityFilter" class="form-label small fw-semibold">Severity</label>
+        <select name="severity" id="severityFilter" class="form-select form-select-sm">
+          <option value="">All Severities</option>
+          {% for sev in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] %}
+          <option value="{{ sev }}"{% if current_severity == sev %} selected{% endif %}>{{ sev }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Filter</button>
+      </div>
+      {% if current_year or current_severity %}
+      <div class="col-auto">
+        <a href="/cves" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-circle me-1"></i>Clear</a>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<!-- Results Info -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <span class="text-muted small">
+    {{ '{:,}'.format(pagination.total) }} CVE{{ 's' if pagination.total != 1 else '' }} found
+    {% if current_year %} in <strong>{{ current_year }}</strong>{% endif %}
+    {% if current_severity %} with severity <strong>{{ current_severity }}</strong>{% endif %}
+  </span>
+</div>
+
+<!-- CVE Table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>CVE ID</th>
+            <th>Description</th>
+            <th>Severity</th>
+            <th>CVSS</th>
+            <th>Date</th>
+            <th>Vendor / Product</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cve in cves %}
+          <tr>
+            <td class="text-nowrap">
+              <a href="/cves/{{ cve.cve_id }}" class="text-decoration-none fw-semibold">{{ cve.cve_id }}</a>
+            </td>
+            <td class="small">{{ cve.description[:150] }}{% if cve.description and cve.description|length > 150 %}…{% endif %}</td>
+            <td>
+              {% set score = cve.base_score %}
+              {% set severity = cve.severity %}
+              {% include 'components/cvss_badge.html' %}
+            </td>
+            <td class="text-nowrap small">{{ '%.1f' | format(cve.base_score) if cve.base_score is not none else 'N/A' }}</td>
+            <td class="text-nowrap small text-muted">{{ cve.date_published[:10] if cve.date_published else 'N/A' }}</td>
+            <td class="small">
+              {% if cve.vendor and cve.vendor != 'n/a' %}
+                <a href="/vendors/{{ cve.vendor }}" class="text-decoration-none">{{ cve.vendor }}</a>
+                {% if cve.product and cve.product != 'n/a' %}
+                  / <a href="/products/{{ cve.vendor }}/{{ cve.product }}" class="text-decoration-none">{{ cve.product }}</a>
+                {% endif %}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-4">
+              <i class="bi bi-search me-1"></i>No CVEs found matching the selected filters.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Pagination -->
+{% include 'components/pagination.html' with context %}
+{% endblock %}
