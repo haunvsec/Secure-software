@@ -36,13 +36,11 @@ def format_date(value):
     if not value:
         return '—'
     formats = [
+        '%Y-%m-%dT%H:%M:%S.%fZ',
         '%Y-%m-%dT%H:%M:%SZ',
         '%Y-%m-%dT%H:%M:%S',
         '%Y-%m-%dT%H:%M:%S%z',
         '%Y-%m-%d',
-        '%a, %d %b %Y %H:%M:%S %z',
-        '%d %B %Y',
-        '%B %d, %Y',
     ]
     for fmt in formats:
         try:
