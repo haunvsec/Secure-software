@@ -34,6 +34,30 @@ services:
       - "3306:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
+    command: >
+      --innodb-buffer-pool-size=1536M
+      --innodb-log-file-size=256M
+      --innodb-log-buffer-size=64M
+      --innodb-flush-log-at-trx-commit=2
+      --innodb-flush-method=O_DIRECT
+      --innodb-io-capacity=1000
+      --innodb-io-capacity-max=2000
+      --innodb-read-io-threads=8
+      --innodb-write-io-threads=4
+      --join-buffer-size=2M
+      --sort-buffer-size=4M
+      --read-buffer-size=1M
+      --read-rnd-buffer-size=1M
+      --tmp-table-size=64M
+      --max-heap-table-size=64M
+      --max-connections=100
+      --thread-cache-size=16
+      --table-open-cache=4000
+      --table-definition-cache=2000
+      --max-allowed-packet=64M
+      --performance-schema=OFF
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Incremental sync of security advisory data from git repository.
 
-1. git pull to get latest changes
-2. git diff to find changed JSON files
-3. Parse and upsert only changed files (MariaDB via SQLAlchemy)
-4. Clear cache
-
-Advisory JSON now uses vendor/product directly — no fuzzy matching needed.
+1. Read last_commit_hash from sync_state table
+2. git pull to get latest changes
+3. git diff between saved hash and current HEAD
+4. Parse and upsert only changed files (MariaDB via SQLAlchemy)
+5. Update sync_state with new hash
+6. Clear cache
 """
 
 import logging
@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
@@ -24,38 +25,64 @@ logger = logging.getLogger('sync_advisories')
 
 ADVISORY_REPO_URL = 'https://github.com/haunvsec/security-advisory-db.git'
 DEFAULT_ADVISORY_DIR = os.environ.get('ADVISORY_REPO_PATH', 'security-advisory-db')
+SOURCE_KEY = 'advisory'
+
+
+def _get_engine():
+    from sqlalchemy import create_engine
+    database_url = os.environ.get('DATABASE_URL')
+    if not database_url:
+        host = os.environ.get('DB_HOST', 'localhost')
+        port = os.environ.get('DB_PORT', '3306')
+        user = os.environ.get('DB_USER', 'cvedb')
+        password = os.environ.get('DB_PASSWORD', 'cvedb')
+        database = os.environ.get('DB_NAME', 'cve_database')
+        database_url = f'mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4'
+    return create_engine(database_url)
+
+
+def _get_saved_hash(session):
+    from models.orm import SyncState
+    row = session.query(SyncState).filter(SyncState.source == SOURCE_KEY).first()
+    return row.last_commit_hash if row else None
+
+
+def _save_sync_state(session, commit_hash, files_changed, records_updated, status):
+    from models.orm import SyncState
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    row = session.query(SyncState).filter(SyncState.source == SOURCE_KEY).first()
+    if row:
+        row.last_commit_hash = commit_hash
+        row.last_sync_time = now
+        row.files_changed = files_changed
+        row.records_updated = records_updated
+        row.status = status
+    else:
+        session.add(SyncState(
+            source=SOURCE_KEY, last_commit_hash=commit_hash,
+            last_sync_time=now, files_changed=files_changed,
+            records_updated=records_updated, status=status,
+        ))
 
 
 def git_pull(repo_dir):
-    """Pull latest changes. Returns (old_hash, new_hash) or None."""
     if not os.path.isdir(os.path.join(repo_dir, '.git')):
         logger.info(f"Cloning {ADVISORY_REPO_URL}...")
         subprocess.run(['git', 'clone', '--depth=1', ADVISORY_REPO_URL, repo_dir],
                        check=True, capture_output=True, text=True)
-        return None, 'initial'
-
-    old_hash = subprocess.run(
+    else:
+        subprocess.run(
+            ['git', 'pull', '--ff-only'], cwd=repo_dir,
+            capture_output=True, text=True, check=True
+        )
+    head = subprocess.run(
         ['git', 'rev-parse', 'HEAD'], cwd=repo_dir,
         capture_output=True, text=True
     ).stdout.strip()
-
-    subprocess.run(
-        ['git', 'pull', '--ff-only'], cwd=repo_dir,
-        capture_output=True, text=True, check=True
-    )
-
-    new_hash = subprocess.run(
-        ['git', 'rev-parse', 'HEAD'], cwd=repo_dir,
-        capture_output=True, text=True
-    ).stdout.strip()
-
-    if old_hash == new_hash:
-        return None, None
-    return old_hash, new_hash
+    return head
 
 
 def get_changed_files(repo_dir, old_hash, new_hash):
-    """Get list of changed JSON files."""
     if old_hash is None:
         import glob
         files = glob.glob(os.path.join(repo_dir, '**', '*.json'), recursive=True)
@@ -74,22 +101,7 @@ def get_changed_files(repo_dir, old_hash, new_hash):
     return files
 
 
-def _get_engine():
-    """Create a SQLAlchemy engine from environment variables."""
-    from sqlalchemy import create_engine
-    database_url = os.environ.get('DATABASE_URL')
-    if not database_url:
-        host = os.environ.get('DB_HOST', 'localhost')
-        port = os.environ.get('DB_PORT', '3306')
-        user = os.environ.get('DB_USER', 'cvedb')
-        password = os.environ.get('DB_PASSWORD', 'cvedb')
-        database = os.environ.get('DB_NAME', 'cve_database')
-        database_url = f'mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4'
-    return create_engine(database_url)
-
-
 def upsert_advisory(session, record):
-    """Insert or update a single advisory record using SQLAlchemy ORM."""
     from models.orm import (
         SecurityAdvisory, AdvisoryAffectedProduct, AdvisoryCve, AdvisoryReference,
     )
@@ -97,31 +109,26 @@ def upsert_advisory(session, record):
     adv = record['advisory']
     adv_id = adv['id']
 
-    # Delete existing record (cascade handles children)
     existing = session.query(SecurityAdvisory).filter(SecurityAdvisory.id == adv_id).first()
     if existing:
         session.delete(existing)
         session.flush()
 
-    # Insert new advisory
     advisory = SecurityAdvisory(
         id=adv['id'], source=adv['source'], title=adv['title'],
         description=adv['description'], severity=adv['severity'],
         cvss_score=adv['cvss_score'], cvss_vector=adv['cvss_vector'],
         published_date=adv['published_date'], modified_date=adv['modified_date'],
-        url=adv['url'], vendor=adv['vendor'],
+        url=adv['url'], vendor=adv.get('vendor', ''),
         solution=adv['solution'], json_file=adv['json_file'],
     )
     session.add(advisory)
 
-    # Insert affected products — vendor/product directly from JSON
     for ap in record['affected']:
         session.add(AdvisoryAffectedProduct(
             advisory_id=adv_id,
-            vendor=ap['vendor'],
-            product=ap['product'],
-            version_range=ap['version_range'],
-            fixed_version=ap['fixed_version'],
+            vendor=ap['vendor'], product=ap['product'],
+            version_range=ap['version_range'], fixed_version=ap['fixed_version'],
         ))
 
     for cve_id in record['cves']:
@@ -134,35 +141,40 @@ def upsert_advisory(session, record):
 
 
 def sync(session=None, repo_dir=None):
-    """Run incremental advisory sync. Returns dict with results."""
     repo_dir = repo_dir or DEFAULT_ADVISORY_DIR
     start = time.time()
-    result = {'source': 'advisory', 'status': 'success', 'files_changed': 0,
+    result = {'source': SOURCE_KEY, 'status': 'success', 'files_changed': 0,
               'records_updated': 0, 'errors': 0, 'duration': 0}
 
+    close_after = False
     try:
-        old_hash, new_hash = git_pull(repo_dir)
-        if old_hash is None and new_hash is None:
-            result['status'] = 'no_changes'
-            logger.info("Advisory sync: no changes")
-            return result
-
-        changed = get_changed_files(repo_dir, old_hash, new_hash)
-        result['files_changed'] = len(changed)
-        logger.info(f"Advisory sync: {len(changed)} files changed")
-
-        if not changed:
-            result['status'] = 'no_changes'
-            return result
-
-        # Get or create SQLAlchemy session
-        close_after = False
         if session is None:
             from sqlalchemy.orm import sessionmaker
             engine = _get_engine()
             Session = sessionmaker(bind=engine)
             session = Session()
             close_after = True
+
+        saved_hash = _get_saved_hash(session)
+        logger.info(f"Advisory sync: saved hash = {saved_hash or 'none'}")
+
+        current_hash = git_pull(repo_dir)
+        logger.info(f"Advisory sync: current HEAD = {current_hash}")
+
+        if saved_hash == current_hash:
+            result['status'] = 'no_changes'
+            logger.info("Advisory sync: no changes (hash matches)")
+            return result
+
+        changed = get_changed_files(repo_dir, saved_hash, current_hash)
+        result['files_changed'] = len(changed)
+        logger.info(f"Advisory sync: {len(changed)} files changed")
+
+        if not changed:
+            _save_sync_state(session, current_hash, 0, 0, 'no_advisory_changes')
+            session.commit()
+            result['status'] = 'no_advisory_changes'
+            return result
 
         for filepath in changed:
             record = parse_advisory(filepath)
@@ -175,11 +187,10 @@ def sync(session=None, repo_dir=None):
                     logger.error(f"Error upserting {filepath}: {e}")
                     session.rollback()
 
+        _save_sync_state(session, current_hash, result['files_changed'],
+                         result['records_updated'], 'success')
         session.commit()
-        if close_after:
-            session.close()
 
-        # Clear cache
         try:
             from database import cache
             cache.clear()
@@ -190,6 +201,10 @@ def sync(session=None, repo_dir=None):
         result['status'] = 'error'
         result['error_message'] = str(e)
         logger.error(f"Advisory sync error: {e}")
+
+    finally:
+        if close_after and session:
+            session.close()
 
     result['duration'] = round(time.time() - start, 2)
     logger.info(f"Advisory sync done: {result}")

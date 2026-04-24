@@ -96,11 +96,13 @@ def get_stats(session: Session) -> dict[str, int]:
         AffectedProduct.vendor != '', AffectedProduct.vendor != 'n/a',
     ).scalar() or 0
 
-    products = session.query(
-        func.count(distinct(func.concat(AffectedProduct.vendor, '/', AffectedProduct.product)))
+    # Use subquery for product count — faster than CONCAT on TEXT columns
+    products_subq = session.query(
+        AffectedProduct.vendor, AffectedProduct.product
     ).filter(
         AffectedProduct.product != '', AffectedProduct.product != 'n/a',
-    ).scalar() or 0
+    ).distinct().subquery()
+    products = session.query(func.count()).select_from(products_subq).scalar() or 0
 
     result = {
         'total_cves': total_cves,

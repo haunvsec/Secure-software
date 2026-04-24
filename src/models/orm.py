@@ -19,4 +19,5 @@ from models.advisory import (  # noqa: F401
     AdvisoryAffectedProduct,
     AdvisoryCve,
     AdvisoryReference,
+    SyncState,
 )

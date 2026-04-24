@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS cves (
     data_version VARCHAR(20),
     INDEX idx_cves_state (state),
     INDEX idx_cves_date_published (date_published),
+    INDEX idx_cves_state_date (state, date_published),
     INDEX idx_cves_severity (severity),
     INDEX idx_cves_assigner (assigner_short_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -138,4 +139,14 @@ CREATE TABLE IF NOT EXISTS advisory_references (
     url TEXT,
     INDEX idx_adv_refs_advisory (advisory_id),
     FOREIGN KEY (advisory_id) REFERENCES security_advisories(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Sync state — tracks last imported git commit hash per data source
+CREATE TABLE IF NOT EXISTS sync_state (
+    source VARCHAR(50) PRIMARY KEY,
+    last_commit_hash VARCHAR(64),
+    last_sync_time VARCHAR(50),
+    files_changed INT DEFAULT 0,
+    records_updated INT DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'success'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

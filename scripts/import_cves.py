@@ -159,6 +159,9 @@ def parse_cve_file(filepath):
     except (json.JSONDecodeError, UnicodeDecodeError):
         return None
 
+    if not isinstance(data, dict):
+        return None
+
     if data.get('dataType') != 'CVE_RECORD':
         return None
 

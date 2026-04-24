@@ -84,3 +84,15 @@ class AdvisoryReference(Base):
     url = Column(Text)
 
     advisory = relationship('SecurityAdvisory', back_populates='references')
+
+
+class SyncState(Base):
+    """Tracks last imported git commit hash per data source."""
+    __tablename__ = 'sync_state'
+
+    source = Column(String(50), primary_key=True)
+    last_commit_hash = Column(String(64))
+    last_sync_time = Column(String(50))
+    files_changed = Column(Integer, default=0)
+    records_updated = Column(Integer, default=0)
+    status = Column(String(20), default='success')

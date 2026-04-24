@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Incremental sync of CVE data from cvelistV5 git repository.
 
-1. git pull to get latest changes
-2. git diff to find changed JSON files
-3. Parse and upsert only changed files (MariaDB via SQLAlchemy)
-4. Clear cache
+1. Read last_commit_hash from sync_state table
+2. git pull to get latest changes
+3. git diff between saved hash and current HEAD
+4. Parse and upsert only changed files (MariaDB via SQLAlchemy)
+5. Update sync_state with new hash
+6. Clear cache
 """
 
 import logging
@@ -12,6 +14,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 
 # Add project paths
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
@@ -23,54 +26,7 @@ logger = logging.getLogger('sync_cves')
 
 CVE_REPO_URL = 'https://github.com/CVEProject/cvelistV5.git'
 DEFAULT_CVE_DIR = os.environ.get('CVE_REPO_PATH', 'cvelistV5')
-
-
-def git_pull(repo_dir):
-    """Pull latest changes. Returns (old_hash, new_hash) or None if no changes."""
-    if not os.path.isdir(os.path.join(repo_dir, '.git')):
-        logger.info(f"Cloning {CVE_REPO_URL}...")
-        subprocess.run(['git', 'clone', '--depth=1', CVE_REPO_URL, repo_dir],
-                       check=True, capture_output=True, text=True)
-        return None, 'initial'
-
-    old_hash = subprocess.run(
-        ['git', 'rev-parse', 'HEAD'], cwd=repo_dir,
-        capture_output=True, text=True
-    ).stdout.strip()
-
-    subprocess.run(
-        ['git', 'pull', '--ff-only'], cwd=repo_dir,
-        capture_output=True, text=True, check=True
-    )
-
-    new_hash = subprocess.run(
-        ['git', 'rev-parse', 'HEAD'], cwd=repo_dir,
-        capture_output=True, text=True
-    ).stdout.strip()
-
-    if old_hash == new_hash:
-        return None, None  # No changes
-    return old_hash, new_hash
-
-
-def get_changed_files(repo_dir, old_hash, new_hash):
-    """Get list of changed JSON files between two commits."""
-    if old_hash is None:
-        # Initial clone — return all JSON files
-        import glob
-        return glob.glob(os.path.join(repo_dir, 'cves', '**', '*.json'), recursive=True)
-
-    result = subprocess.run(
-        ['git', 'diff', '--name-only', f'{old_hash}..{new_hash}', '--', '*.json'],
-        cwd=repo_dir, capture_output=True, text=True
-    )
-    files = []
-    for line in result.stdout.strip().split('\n'):
-        if line and line.endswith('.json'):
-            full_path = os.path.join(repo_dir, line)
-            if os.path.isfile(full_path):
-                files.append(full_path)
-    return files
+SOURCE_KEY = 'cve'
 
 
 def _get_engine():
@@ -87,6 +43,89 @@ def _get_engine():
     return create_engine(database_url)
 
 
+def _get_saved_hash(session):
+    """Read last imported commit hash from sync_state table."""
+    from models.orm import SyncState
+    row = session.query(SyncState).filter(SyncState.source == SOURCE_KEY).first()
+    return row.last_commit_hash if row else None
+
+
+def _save_sync_state(session, commit_hash, files_changed, records_updated, status):
+    """Update sync_state table with new hash and stats."""
+    from models.orm import SyncState
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    row = session.query(SyncState).filter(SyncState.source == SOURCE_KEY).first()
+    if row:
+        row.last_commit_hash = commit_hash
+        row.last_sync_time = now
+        row.files_changed = files_changed
+        row.records_updated = records_updated
+        row.status = status
+    else:
+        session.add(SyncState(
+            source=SOURCE_KEY, last_commit_hash=commit_hash,
+            last_sync_time=now, files_changed=files_changed,
+            records_updated=records_updated, status=status,
+        ))
+
+
+def git_pull(repo_dir):
+    """Pull latest changes. Returns current HEAD hash."""
+    if not os.path.isdir(os.path.join(repo_dir, '.git')):
+        logger.info(f"Cloning {CVE_REPO_URL}...")
+        subprocess.run(['git', 'clone', '--depth=1', CVE_REPO_URL, repo_dir],
+                       check=True, capture_output=True, text=True)
+    else:
+        try:
+            subprocess.run(
+                ['git', 'pull', '--ff-only'], cwd=repo_dir,
+                capture_output=True, text=True, check=True
+            )
+        except subprocess.CalledProcessError:
+            # ff-only failed — try fetch + reset
+            logger.warning("git pull --ff-only failed, trying fetch + reset")
+            subprocess.run(['git', 'fetch', 'origin'], cwd=repo_dir,
+                           capture_output=True, text=True)
+            subprocess.run(['git', 'reset', '--hard', 'origin/main'], cwd=repo_dir,
+                           capture_output=True, text=True)
+    head = subprocess.run(
+        ['git', 'rev-parse', 'HEAD'], cwd=repo_dir,
+        capture_output=True, text=True
+    ).stdout.strip()
+    return head
+
+
+def get_changed_files(repo_dir, old_hash, new_hash):
+    """Get list of changed JSON files between two commits."""
+    if old_hash is None:
+        # No saved hash — treat as initial import (all files)
+        import glob
+        return glob.glob(os.path.join(repo_dir, 'cves', '**', '*.json'), recursive=True)
+
+    # Ensure we have enough history for diff (shallow clones may not)
+    try:
+        subprocess.run(
+            ['git', 'cat-file', '-e', old_hash],
+            cwd=repo_dir, capture_output=True, check=True
+        )
+    except subprocess.CalledProcessError:
+        logger.info(f"Old hash {old_hash[:12]} not in history, fetching deeper...")
+        subprocess.run(['git', 'fetch', '--unshallow'], cwd=repo_dir,
+                       capture_output=True, text=True)
+
+    result = subprocess.run(
+        ['git', 'diff', '--name-only', f'{old_hash}..{new_hash}', '--', 'cves/*.json'],
+        cwd=repo_dir, capture_output=True, text=True
+    )
+    files = []
+    for line in result.stdout.strip().split('\n'):
+        if line and line.endswith('.json') and 'delta' not in line:
+            full_path = os.path.join(repo_dir, line)
+            if os.path.isfile(full_path):
+                files.append(full_path)
+    return files
+
+
 def upsert_cve(session, record):
     """Insert or update a single CVE record using SQLAlchemy ORM."""
     from models.orm import Cve, AffectedProduct, CvssScore, CweEntry, Reference
@@ -94,13 +133,11 @@ def upsert_cve(session, record):
     c = record['cve']
     cve_id = c['cve_id']
 
-    # Delete existing record and related data (cascade handles children)
     existing = session.query(Cve).filter(Cve.cve_id == cve_id).first()
     if existing:
         session.delete(existing)
         session.flush()
 
-    # Insert new CVE record
     cve = Cve(
         cve_id=c['cve_id'], state=c['state'],
         assigner_org_id=c['assigner_org_id'],
@@ -117,7 +154,7 @@ def upsert_cve(session, record):
             platform=a['platform'], version_start=a['version_start'],
             version_end=a['version_end'], version_exact=a['version_exact'],
             default_status=a['default_status'], status=a['status'],
-            version_end_type=a['version_end_type'],
+            version_end_type=a.get('version_end_type', ''),
         ))
 
     for s in record['cvss']:
@@ -148,26 +185,12 @@ def sync(session=None, repo_dir=None):
     """Run incremental CVE sync. Returns dict with results."""
     repo_dir = repo_dir or DEFAULT_CVE_DIR
     start = time.time()
-    result = {'source': 'cve', 'status': 'success', 'files_changed': 0,
+    result = {'source': SOURCE_KEY, 'status': 'success', 'files_changed': 0,
               'records_updated': 0, 'errors': 0, 'duration': 0}
 
+    close_after = False
     try:
-        old_hash, new_hash = git_pull(repo_dir)
-        if old_hash is None and new_hash is None:
-            result['status'] = 'no_changes'
-            logger.info("CVE sync: no changes")
-            return result
-
-        changed = get_changed_files(repo_dir, old_hash, new_hash)
-        result['files_changed'] = len(changed)
-        logger.info(f"CVE sync: {len(changed)} files changed")
-
-        if not changed:
-            result['status'] = 'no_changes'
-            return result
-
-        # Get or create SQLAlchemy session
-        close_after = False
+        # Get or create session
         if session is None:
             from sqlalchemy.orm import sessionmaker
             engine = _get_engine()
@@ -175,6 +198,32 @@ def sync(session=None, repo_dir=None):
             session = Session()
             close_after = True
 
+        # Read saved hash from DB
+        saved_hash = _get_saved_hash(session)
+        logger.info(f"CVE sync: saved hash = {saved_hash or 'none'}")
+
+        # Git pull and get current HEAD
+        current_hash = git_pull(repo_dir)
+        logger.info(f"CVE sync: current HEAD = {current_hash}")
+
+        if saved_hash == current_hash:
+            result['status'] = 'no_changes'
+            logger.info("CVE sync: no changes (hash matches)")
+            return result
+
+        # Find changed files
+        changed = get_changed_files(repo_dir, saved_hash, current_hash)
+        result['files_changed'] = len(changed)
+        logger.info(f"CVE sync: {len(changed)} files changed")
+
+        if not changed:
+            # Hash changed but no JSON files changed (e.g. README update)
+            _save_sync_state(session, current_hash, 0, 0, 'no_cve_changes')
+            session.commit()
+            result['status'] = 'no_cve_changes'
+            return result
+
+        # Upsert changed CVEs
         for filepath in changed:
             record = parse_cve_file(filepath)
             if record:
@@ -186,9 +235,10 @@ def sync(session=None, repo_dir=None):
                     logger.error(f"Error upserting {filepath}: {e}")
                     session.rollback()
 
+        # Save new hash
+        _save_sync_state(session, current_hash, result['files_changed'],
+                         result['records_updated'], 'success')
         session.commit()
-        if close_after:
-            session.close()
 
         # Clear cache
         try:
@@ -202,6 +252,10 @@ def sync(session=None, repo_dir=None):
         result['status'] = 'error'
         result['error_message'] = str(e)
         logger.error(f"CVE sync error: {e}")
+
+    finally:
+        if close_after and session:
+            session.close()
 
     result['duration'] = round(time.time() - start, 2)
     logger.info(f"CVE sync done: {result}")
