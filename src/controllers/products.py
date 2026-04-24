@@ -41,6 +41,29 @@ def product_detail(vendor, product):
         max_cve = sv.get('max_cve_id', '')
         if max_cve:
             sv['references'] = get_safe_version_references(session, max_cve)
+
+    # If vendor-advisory references exist, only show branches from the latest advisory
+    # (branches sharing the same reference URL as the highest version branch)
+    if safe_versions:
+        # Find reference URLs of the highest branch (first item, sorted desc)
+        top_refs = set()
+        for ref in safe_versions[0].get('references', []):
+            tags = (ref.get('tags') or '').lower()
+            if 'vendor-advisory' in tags:
+                top_refs.add(ref.get('url', ''))
+
+        if top_refs:
+            # Filter: keep only branches whose vendor-advisory refs overlap with top branch
+            filtered = []
+            for sv in safe_versions:
+                sv_refs = set()
+                for ref in sv.get('references', []):
+                    tags = (ref.get('tags') or '').lower()
+                    if 'vendor-advisory' in tags:
+                        sv_refs.add(ref.get('url', ''))
+                if sv_refs & top_refs:
+                    filtered.append(sv)
+            safe_versions = filtered
     versions = get_product_versions(session, vendor, product,
                                         page=sanitize_page(request.args.get('vpage')))
     return render_template('product_detail.html', active_page='products',
