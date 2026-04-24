@@ -45,7 +45,7 @@
     <div class="table-responsive">
       <table class="table table-hover mb-0">
         <thead class="table-light">
-          <tr><th>CVE ID</th><th>Description</th><th>Severity</th><th>CVSS</th><th>Date</th></tr>
+          <tr><th>CVE ID</th><th>Description</th><th>Severity</th><th>CVSS</th><th>Published</th><th>Modified</th></tr>
         </thead>
         <tbody>
           {% for cve in cves %}
@@ -55,6 +55,7 @@
             <td>{% set score = cve.base_score %}{% set severity = cve.severity %}{% include 'components/cvss_badge.html' %}</td>
             <td class="text-nowrap small">{{ '%.1f' | format(cve.base_score) if cve.base_score is not none else 'N/A' }}</td>
             <td class="text-nowrap small text-muted">{{ cve.date_published[:10] if cve.date_published else 'N/A' }}</td>
+            <td class="text-nowrap small text-muted">{{ cve.date_updated[:10] if cve.date_updated else '—' }}</td>
           </tr>
           {% else %}
           <tr><td colspan="5" class="text-center text-muted py-4">No CVEs found.</td></tr>

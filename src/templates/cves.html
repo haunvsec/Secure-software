@@ -59,7 +59,8 @@
             <th>Description</th>
             <th>Severity</th>
             <th>CVSS</th>
-            <th>Date</th>
+            <th>Published</th>
+            <th>Modified</th>
             <th>Vendor / Product</th>
           </tr>
         </thead>
@@ -77,6 +78,7 @@
             </td>
             <td class="text-nowrap small">{{ '%.1f' | format(cve.base_score) if cve.base_score is not none else 'N/A' }}</td>
             <td class="text-nowrap small text-muted">{{ cve.date_published[:10] if cve.date_published else 'N/A' }}</td>
+            <td class="text-nowrap small text-muted">{{ cve.date_updated[:10] if cve.date_updated else '—' }}</td>
             <td class="small">
               {% if cve.vendor and cve.vendor != 'n/a' %}
                 <a href="/vendors/{{ cve.vendor }}" class="text-decoration-none">{{ cve.vendor }}</a>

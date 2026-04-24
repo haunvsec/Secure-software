@@ -121,7 +121,7 @@ def get_latest_cves(session: Session, limit: int = 10) -> list[dict]:
     """Return the most recently published CVEs."""
     rows = session.query(
         Cve.cve_id, Cve.description, Cve.severity, Cve.date_published,
-        CvssScore.base_score,
+        Cve.date_updated, CvssScore.base_score,
     ).outerjoin(CvssScore, Cve.cve_id == CvssScore.cve_id).filter(
         Cve.state == 'PUBLISHED'
     ).group_by(Cve.cve_id).order_by(
@@ -138,6 +138,7 @@ def get_cves(session: Session, page: int, year=None, severity=None) -> dict:
     """Paginated published CVEs with optional year/severity filters."""
     q = session.query(
         Cve.cve_id, Cve.description, Cve.severity, Cve.date_published,
+        Cve.date_updated,
         CvssScore.base_score, AffectedProduct.vendor, AffectedProduct.product,
     ).outerjoin(CvssScore, Cve.cve_id == CvssScore.cve_id).outerjoin(
         AffectedProduct, Cve.cve_id == AffectedProduct.cve_id
@@ -246,7 +247,7 @@ def get_cves_by_month(session: Session, year: int, month: str, page: int) -> dic
     prefix = f'{year}-{month}%'
     q = session.query(
         Cve.cve_id, Cve.description, Cve.severity, Cve.date_published,
-        CvssScore.base_score,
+        Cve.date_updated, CvssScore.base_score,
     ).outerjoin(CvssScore, Cve.cve_id == CvssScore.cve_id).filter(
         Cve.state == 'PUBLISHED', Cve.date_published.like(prefix),
     ).group_by(Cve.cve_id).order_by(desc(Cve.date_published))
@@ -289,7 +290,7 @@ def get_cves_by_cwe(session: Session, cwe_id: str, page: int) -> dict:
     """Paginated CVEs for a specific CWE type."""
     q = session.query(
         Cve.cve_id, Cve.description, Cve.severity, Cve.date_published,
-        CvssScore.base_score,
+        Cve.date_updated, CvssScore.base_score,
     ).join(CweEntry, Cve.cve_id == CweEntry.cve_id).outerjoin(
         CvssScore, Cve.cve_id == CvssScore.cve_id
     ).filter(
@@ -339,7 +340,7 @@ def get_cves_by_severity(session: Session, severity: str, page: int) -> dict:
     """Paginated CVEs for a specific severity level."""
     q = session.query(
         Cve.cve_id, Cve.description, Cve.severity, Cve.date_published,
-        CvssScore.base_score,
+        Cve.date_updated, CvssScore.base_score,
     ).outerjoin(CvssScore, Cve.cve_id == CvssScore.cve_id).filter(
         Cve.state == 'PUBLISHED', Cve.severity == severity,
     ).group_by(Cve.cve_id).order_by(desc(Cve.date_published))
@@ -374,7 +375,7 @@ def get_cves_by_assigner(session: Session, assigner: str, page: int) -> dict:
     """Paginated CVEs for a specific assigner."""
     q = session.query(
         Cve.cve_id, Cve.description, Cve.severity, Cve.date_published,
-        CvssScore.base_score,
+        Cve.date_updated, CvssScore.base_score,
     ).outerjoin(CvssScore, Cve.cve_id == CvssScore.cve_id).filter(
         Cve.state == 'PUBLISHED', Cve.assigner_short_name == assigner,
     ).group_by(Cve.cve_id).order_by(desc(Cve.date_published))
@@ -525,7 +526,7 @@ def get_product_cves(session: Session, vendor: str, product: str, page: int) -> 
     """Paginated CVEs affecting a specific product."""
     q = session.query(
         Cve.cve_id, Cve.description, Cve.severity, Cve.date_published,
-        CvssScore.base_score,
+        Cve.date_updated, CvssScore.base_score,
     ).join(AffectedProduct, Cve.cve_id == AffectedProduct.cve_id).outerjoin(
         CvssScore, Cve.cve_id == CvssScore.cve_id
     ).filter(
@@ -638,7 +639,7 @@ def get_version_cves(session: Session, vendor: str, product: str,
     """Paginated CVEs affecting a specific version of a product."""
     q = session.query(
         Cve.cve_id, Cve.description, Cve.severity, Cve.date_published,
-        CvssScore.base_score,
+        Cve.date_updated, CvssScore.base_score,
     ).join(AffectedProduct, Cve.cve_id == AffectedProduct.cve_id).outerjoin(
         CvssScore, Cve.cve_id == CvssScore.cve_id
     ).filter(
@@ -702,7 +703,7 @@ def get_fixed_cves_by_branch(session: Session, vendor: str, product: str,
     like_pattern = f'{branch}.%'
     q = session.query(
         Cve.cve_id, Cve.description, Cve.severity, Cve.date_published,
-        CvssScore.base_score,
+        Cve.date_updated, CvssScore.base_score,
     ).join(AffectedProduct, Cve.cve_id == AffectedProduct.cve_id).outerjoin(
         CvssScore, Cve.cve_id == CvssScore.cve_id
     ).filter(
@@ -752,7 +753,7 @@ def search_cves(session: Session, cve_id: str | None = None,
 
     q = session.query(
         Cve.cve_id, Cve.description, Cve.severity, Cve.date_published,
-        CvssScore.base_score,
+        Cve.date_updated, CvssScore.base_score,
     )
     if need_ap_join:
         q = q.join(AffectedProduct, Cve.cve_id == AffectedProduct.cve_id)
@@ -801,6 +802,7 @@ def get_advisories(session: Session, page: int, source: str | None = None,
         SecurityAdvisory.severity,
         SecurityAdvisory.cvss_score,
         SecurityAdvisory.published_date,
+        SecurityAdvisory.modified_date,
         SecurityAdvisory.url,
         SecurityAdvisory.vendor,
         cve_count_subq,

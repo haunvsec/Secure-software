@@ -46,7 +46,7 @@
     <div class="table-responsive">
       <table class="table table-hover mb-0">
         <thead class="table-light">
-          <tr><th>ID</th><th>Title</th><th>Source</th><th>Severity</th><th>CVEs</th><th>Date</th></tr>
+          <tr><th>ID</th><th>Title</th><th>Source</th><th>Severity</th><th>CVEs</th><th>Published</th><th>Modified</th></tr>
         </thead>
         <tbody>
           {% for adv in advisories %}
@@ -64,9 +64,10 @@
             </td>
             <td class="small">{{ adv.cve_count }}</td>
             <td class="text-nowrap small text-muted">{{ adv.published_date|format_date }}</td>
+            <td class="text-nowrap small text-muted">{{ adv.modified_date|format_date if adv.modified_date else '—' }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="6" class="text-center text-muted py-4">No advisories found.</td></tr>
+          <tr><td colspan="7" class="text-center text-muted py-4">No advisories found.</td></tr>
           {% endfor %}
         </tbody>
       </table>
